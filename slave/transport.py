@@ -438,9 +438,10 @@ class LinuxGpib(Transport):
 
     def __init__(self, primary=0, secondary=None, board=0, timeout='10 s',
                  send_eoi=True, eos_char=None, eos_mode=0):
+        from slave.types import Register
         super(LinuxGpib, self).__init__()
 
-        valid_address = range(0, 31)
+        valid_address = list(range(0, 31))
         if primary not in valid_address:
             raise ValueError('Primary address must be in the range 0 to 30.')
 
@@ -452,7 +453,7 @@ class LinuxGpib(Transport):
         timeout = self.TIMEOUT.index(timeout)
         send_eoi = bool(send_eoi)
 
-        if not eos_mode in [0, Linux.Gpib.REOS, LinuxGpib.XEOS, LinuxGpib.BIN]:
+        if not eos_mode in [0, LinuxGpib.REOS, LinuxGpib.XEOS, LinuxGpib.BIN]:
             raise ValueError('Invalid eos_mode')
 
         if eos_char is None:
@@ -478,7 +479,8 @@ class LinuxGpib(Transport):
             self._device = None
 
     def __write__(self, data):
-        ibsta = self._lib.ibwrt(self._device, ct.c_void_p(data), ct.c_long(len(data)))
+        d = ct.c_char_p(bytes(data))
+        ibsta = self._lib.ibwrt(self._device, ct.cast(d, ct.c_void_p), ct.c_long(len(data)))
         self._check_status(ibsta)
 
     def __read__(self, num_bytes):
