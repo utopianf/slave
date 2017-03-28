@@ -8,8 +8,8 @@ import collections
 import pytest
 from itertools import product
 
+from slave.keithley import K2182, K6221, K2000, K2400
 from slave.driver import Command
-from slave.keithley import K2182, K6221, K2400
 from slave.transport import SimulatedTransport
 
 
@@ -21,6 +21,10 @@ def test_K2182():
 def test_K6221():
     # Test if instantiation fails
     K6221(SimulatedTransport())
+
+def test_K2000():
+    # Test if instantiation fails
+    K2000(SimulatedTransport())
 
 
 class TestK2400(object):
