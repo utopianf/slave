@@ -171,7 +171,7 @@ class SubSense(Driver):
         self.nplc = Command(
             ':SENS:%s:NPLC?' % function,
             ':SENS:%s:NPLC' % function,
-            Float(0.01, 60)
+            Float(0.01, 10)
         )
         self.auto_range = Command(
             ':SENS:%s:RANG:AUTO?' % function,
