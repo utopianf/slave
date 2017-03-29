@@ -122,7 +122,7 @@ class Trigger(Driver):
         self._write(':ABOR')
 
     def signal(self):
-        self._write(':SIGN')
+        self._write(':TRIG:SIGN')
 
 
 class Sense(Driver):
@@ -242,6 +242,7 @@ class K2000(iec.IEC60488, iec.Trigger, iec.StoredSetting):
                 raise ValueError('Invalid identification: %s', idns)
         self.triggering = Trigger(self._transport, self._protocol)
         self.triggering.continuous_initiation = False
+        self.display = Display(self._transport, self._protocol)
         self.initiate = self.triggering.initiate
 
         self.sense = Sense(self._transport, self._protocol)
