@@ -143,10 +143,10 @@ class Sense(Driver):
             ':SENS:FUNC',
             Mapping({name: ('"' + value + '"') for name, value in _functions.items()})
         )
-        self.current_ac = SubSense(self._transport, self._protocol, 'CURR:AC', I_MAX)
         self.current = SubSense(self._transport, self._protocol, 'CURR:DC', I_MAX)
-        self.voltage = SubSense(self._transport, self._protocol, 'VOLT:AC', V_AC_MAX)
-        self.voltage_ac = SubSense(self._transport, self._protocol, 'VOLT', V_MAX)
+        self.current_ac = SubSense(self._transport, self._protocol, 'CURR:AC', I_MAX)
+        self.voltage = SubSense(self._transport, self._protocol, 'VOLT:DC', V_MAX)
+        self.voltage_ac = SubSense(self._transport, self._protocol, 'VOLT:AC', V_AC_MAX)
         self.resistance = SubSense(self._transport, self._protocol, 'RES', R_MAX)
         self.fresistance = SubSense(self._transport, self._protocol, 'FRES', R_MAX)
         self.voltage_dc = self.voltage
