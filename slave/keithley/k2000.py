@@ -122,6 +122,16 @@ class Trigger(Driver):
 
 
 class Sense(Driver):
+    """The Sense command layer.
+
+    :param transport: A transport object.
+
+    :param protocol: A protocol object.
+
+    :ivar function: Current measurement function
+
+    :ivar functions: List of available functions
+    """
     def __init__(self, transport, protocol):
         super(Sense, self).__init__(transport, protocol)
         self.function = Command(
@@ -137,11 +147,14 @@ class Sense(Driver):
         self.fresistance = SubSense(self._transport, self._protocol, 'FRES', R_MAX)
         self.voltage_dc = self.voltage
         self.current_dc = self.current
-        self.available_functions = tuple(_functions)
 
     def get_data(self):
         """reads the latest instrument reading."""
         return self._query((':SENS:DATA?', Stream(Float)))
+
+    @property
+    def functions(self):
+        return tuple(_functions)
 
 
 class SubSense(Driver):
@@ -217,7 +230,6 @@ class K2000(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     """Keithley Model2000 Digital Multimeter"""
     def __init__(self, transport):
         super(K2000, self).__init__(transport)
-
         self.triggering = Trigger(self._transport, self._protocol)
         self.triggering.continuous_initiation = False
         self.initiate = self.triggering.initiate
