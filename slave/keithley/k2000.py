@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 #
 # E21, (c) 2012-2015, see AUTHORS.  Licensed under the GNU GPL.
+from slave.transport import SimulatedTransport
 from slave.driver import Command, Driver
 from slave.types import Boolean, Float, Integer, Mapping, Stream, String
 import slave.iec60488 as iec
+
+from logging import getLogger
+logger = getLogger(__name__)
 
 I_MAX = 3.1
 V_MAX = 1010
@@ -230,6 +234,12 @@ class K2000(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     """Keithley Model2000 Digital Multimeter"""
     def __init__(self, transport):
         super(K2000, self).__init__(transport)
+        if not isinstance(transport, SimulatedTransport):
+            # check identification
+            idns = self.identification
+            logger.debug('identification: %s', idns)
+            if idns[1] != 'MODEL 2000':
+                raise ValueError('Invalid identification: %s', idns)
         self.triggering = Trigger(self._transport, self._protocol)
         self.triggering.continuous_initiation = False
         self.initiate = self.triggering.initiate
