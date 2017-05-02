@@ -740,7 +740,8 @@ class Setup(object):
         sub.sweep_stop = stop
         sub.points = points
 
-    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None, channel=1):
+    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None, channel=1,
+              four_wire=None, integration_time=None):
         """Sets up voltage or current sense parameters.
 
         ..note: four wire settings apply both modes. to avoid confusion, this function does not support them.
@@ -751,6 +752,8 @@ class Setup(object):
         :param nplc: number of power line cycles (integration time in (1/50) seconds)
         :param compliance: sense compliance
         :param channel: SMU channel, 1, or 2.
+        :param four_wire: activate or deactivate four_wire sensing
+        :param integration_time: integration time in seconds
         """
         sense = self._smu.senses[channel-1]
         if auto_range and range_:
@@ -761,13 +764,19 @@ class Setup(object):
             sub = sense.current
         else:
             raise ValueError('Invalid function: %r' % function)
+        if nplc is not None and integration_time is not None:
+            raise ValueError('"nplc" and "integration_time" are mutually exclusive.')
 
+        if four_wire is not None:
+            sense.four_wire = four_wire
         if auto_range is not None:
             sub.auto_range = auto_range
         if range_ is not None:
             sub.range = range_
         if nplc is not None:
             sub.nplc = nplc
+        if integration_time is not None:
+            sub.aperture = integration_time
         if compliance is not None:
             sub.compliance = compliance
 
