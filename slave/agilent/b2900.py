@@ -283,7 +283,8 @@ class Sense(Driver):
 
 class SubSense(Driver):
     """
-    :ivar float nplc: number of power line cycles
+    :ivar float aperture: integration time for one point measurement.
+    :ivar float nplc: integration time in number of power line cycles (1/50 s or 1/60 s)
     :ivar bool auto_range: enables/disables automatic range
     :ivar float range: range (upper limit of measurements)
     :ivar float compliance: (only for function='volt' or 'curr') sense compliance
@@ -306,6 +307,7 @@ class SubSense(Driver):
 
         m = {'c': self._channel, 'f': self._function}
 
+        self.aperture = _command(m, ':SENS{c}:{f}:APER?', ':SENS{c}:{f}:APER', Float(8e-6, 2))
         self.nplc = _command(m, ':SENS{c}:{f}:NPLC?', ':SENS{c}:{f}:NPLC', Float(0.01, 10))
         self.auto_range = _command(m, ':SENS{c}:{f}:RANG:AUTO?', ':SENS{c}:{f}:RANGE:AUTO', Boolean)
         self.range = _command(m, ':SENS{c}:{f}:RANG?', ':SENS{c}:{f}:RANG', Float(0, ulim))
