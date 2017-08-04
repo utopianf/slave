@@ -186,6 +186,8 @@ class Sense(Driver):
         instrument and cannot be changed. See :SENSe:WAIT[:STATe].
     :ivar wait_gain: Sets the gain value used for calculating the measurement wait time for the specified
         channel.
+    :ivar wait_offset: Sets the offset value used for calculating the measurement wait time for the specified
+        channel.
     :ivar wait_state: Enables or disables the measurement wait time for the specified channel. The wait
         time is defined as the time the measurement channel cannot start measurement after
         the start of a DC output or the trailing edge of a pulse."""
@@ -199,6 +201,7 @@ class Sense(Driver):
         self.remote_sense = self.four_wire = _command(m, ':SENS{c}:REM?', ':SENS{c}:REM', Boolean)
         self.wait_auto = _command(m, ':SENS{c}:WAIT:AUTO?', ':SENS{c}:WAIT:AUTO', Boolean)
         self.wait_gain = _command(m, ':SENS{c}:WAIT:GAIN?', ':SENS{c}:WAIT:GAIN', Float(0, 100))
+        self.wait_offset = _command(m, ':SENS{c}:WAIT:OFFS?', ':SENS{c}:WAIT:OFFS', Float(0, 1))
         self.wait_state = _command(m, ':SENS{c}:WAIT?', ':SENS{c}:WAIT', Boolean)
 
         self.volt = self.voltage = SubSense(self._transport, self._protocol, channel, 'VOLT', V_MAX)
@@ -567,6 +570,16 @@ class Format(Driver):
 class Output(Driver):
     """The Output Command Subsystem.
 
+    :ivar wait_auto: Enables or disables the initial wait time used for calculating the source wait
+        time for the specified channel. The initial wait time is automatically set by the
+        instrument and cannot be changed. See :SOURCe:WAIT[:STATe].
+    :ivar wait_gain: Sets the gain value used for calculating the source wait time for the specified
+        channel.
+    :ivar wait_offset: Sets the offset value used for calculating the source wait time for the specified
+        channel.
+    :ivar wait_state: Enables or disables the source wait time for the specified channel. The wait
+        time is defined as the time the source channel cannot change the output after
+        the start of a DC output or the trailing edge of a pulse
     :ivar bool filter_auto: Enables or disables the automatic filter function. Default is False.
     :ivar float filter_cutoff_frequency: The cutoff frequency of the output filter.
         .. note::
@@ -597,6 +610,10 @@ class Output(Driver):
         super().__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
+        self.wait_auto = _command(m, ':SOUR{c}:WAIT:AUTO?', ':SOUR{c}:WAIT:AUTO', Boolean)
+        self.wait_gain = _command(m, ':SOUR{c}:WAIT:GAIN?', ':SOUR{c}:WAIT:GAIN', Float(0, 100))
+        self.wait_offset = _command(m, ':SOUR{c}:WAIT:OFFS?', ':SOUR{c}:WAIT:OFFS', Float(0, 1))
+        self.wait_state = _command(m, ':SOUR{c}:WAIT?', ':SOUR{c}:WAIT', Boolean)
         self.filter_auto = _command(m, ':OUTP{c}:FILT:AUTO?', ':OUTP{c}:FILT:AUTO', Boolean)
         self.filter_cutoff_frequency = _command(m, ':OUTP{c}:FILT:FREQ?', ':OUTP{c}:FILT:FREQ', Float(31.830, 31831))
         self.filter_status = _command(m, ':OUTP{c}:FILT?', ':OUTP{c}:FILT', Boolean)
