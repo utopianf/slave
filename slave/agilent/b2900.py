@@ -387,9 +387,8 @@ class Source(Driver):
         )
         self.sweep_points = _command(
             m,
-            ':SOUR{c}:SWE:POIN?',
-            ':SOUR{c}:SWE:POIN',
-            Integer(1, 2500)
+            write=':SOUR{c}:SWE:POIN',
+            type_=Integer(1, 2500)
         )
         self.sweep_range = _command(
             m,
