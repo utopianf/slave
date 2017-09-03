@@ -358,6 +358,27 @@ class SubSense(Driver):
 
 
 class Source(Driver):
+    """The Source Command Subsystem.
+        
+        :ivar mode: Sets the source mode. available values: 'current', 'voltage'
+        :ivar function_shape: Sets the source shape. available values: 'dc', 'pulse'
+        :ivar continuous_triggering: Boolean. Enables and disables the source triggering.
+        :ivar sweep_direction: Sets the source sweep direction. available values: 'up', 'down'
+        :ivar sweep_points: Sets the number of source sweep points. (min: 1, max: 2500)
+        :ivar sweep_range: Sets the source sweep range. available values: 'best', 'auto', 'fixed'  
+        :ivar sweep_space: Sets the source sweep space. available values: 'linear', 'logarithmic' 
+        :ivar sweep_mode: Sets the source sweep mode. available values: 'single', 'double' 
+        :ivar wait_auto: Enables or disables the initial wait time used for calculating the source wait
+            time for the specified channel. The initial wait time is automatically set by the
+            instrument and cannot be changed. See :SOURCe:WAIT[:STATe].
+        :ivar wait_gain: Sets the gain value used for calculating the source wait time for the specified
+            channel.
+        :ivar wait_offset: Sets the offset value used for calculating the source wait time for the specified
+            channel.
+        :ivar wait_state: Enables or disables the source wait time for the specified channel. The wait
+            time is defined as the time the source channel cannot change the output after
+            the start of a DC output or the trailing edge of a pulse
+    """
     _functions = _source_functions
 
     def __init__(self, transport, protocol, channel=1):
@@ -390,9 +411,8 @@ class Source(Driver):
         )
         self.sweep_points = _command(
             m,
-            ':SOUR{c}:SWE:POIN?',
-            ':SOUR{c}:SWE:POIN',
-            Integer(1, 2500)
+            write=':SOUR{c}:SWE:POIN',
+            type_=Integer(1, 2500)
         )
         self.sweep_range = _command(
             m,
@@ -412,6 +432,10 @@ class Source(Driver):
             ':SOUR{c}:SWE:STA',
             Mapping({'single': 'SING', 'double': 'DOUB'})
         )
+        self.wait_auto = _command(m, ':SOUR{c}:WAIT:AUTO?', ':SOUR{c}:WAIT:AUTO', Boolean)
+        self.wait_gain = _command(m, ':SOUR{c}:WAIT:GAIN?', ':SOUR{c}:WAIT:GAIN', Float(0, 100))
+        self.wait_offset = _command(m, ':SOUR{c}:WAIT:OFFS?', ':SOUR{c}:WAIT:OFFS', Float(0, 1))
+        self.wait_state = _command(m, ':SOUR{c}:WAIT?', ':SOUR{c}:WAIT', Boolean)
 
         self.curr = self.current = SubSource(transport, protocol, channel, 'CURR', I_MAX)
         self.volt = self.voltage = SubSource(transport, protocol, channel, 'VOLT', V_MAX)
@@ -570,16 +594,6 @@ class Format(Driver):
 class Output(Driver):
     """The Output Command Subsystem.
 
-    :ivar wait_auto: Enables or disables the initial wait time used for calculating the source wait
-        time for the specified channel. The initial wait time is automatically set by the
-        instrument and cannot be changed. See :SOURCe:WAIT[:STATe].
-    :ivar wait_gain: Sets the gain value used for calculating the source wait time for the specified
-        channel.
-    :ivar wait_offset: Sets the offset value used for calculating the source wait time for the specified
-        channel.
-    :ivar wait_state: Enables or disables the source wait time for the specified channel. The wait
-        time is defined as the time the source channel cannot change the output after
-        the start of a DC output or the trailing edge of a pulse
     :ivar bool filter_auto: Enables or disables the automatic filter function. Default is False.
     :ivar float filter_cutoff_frequency: The cutoff frequency of the output filter.
         .. note::
@@ -610,10 +624,6 @@ class Output(Driver):
         super().__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
-        self.wait_auto = _command(m, ':SOUR{c}:WAIT:AUTO?', ':SOUR{c}:WAIT:AUTO', Boolean)
-        self.wait_gain = _command(m, ':SOUR{c}:WAIT:GAIN?', ':SOUR{c}:WAIT:GAIN', Float(0, 100))
-        self.wait_offset = _command(m, ':SOUR{c}:WAIT:OFFS?', ':SOUR{c}:WAIT:OFFS', Float(0, 1))
-        self.wait_state = _command(m, ':SOUR{c}:WAIT?', ':SOUR{c}:WAIT', Boolean)
         self.filter_auto = _command(m, ':OUTP{c}:FILT:AUTO?', ':OUTP{c}:FILT:AUTO', Boolean)
         self.filter_cutoff_frequency = _command(m, ':OUTP{c}:FILT:FREQ?', ':OUTP{c}:FILT:FREQ', Float(31.830, 31831))
         self.filter_status = _command(m, ':OUTP{c}:FILT?', ':OUTP{c}:FILT', Boolean)
