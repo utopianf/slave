@@ -585,7 +585,7 @@ class Format(Driver):
         super().__init__(transport, protocol)
         self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions)))
 
-        
+
 # -----------------------------------------------------------------------------
 # Output Command Layer
 # -----------------------------------------------------------------------------
