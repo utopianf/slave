@@ -359,15 +359,15 @@ class SubSense(Driver):
 
 class Source(Driver):
     """The Source Command Subsystem.
-        
+
         :ivar mode: Sets the source mode. available values: 'current', 'voltage'
         :ivar function_shape: Sets the source shape. available values: 'dc', 'pulse'
         :ivar continuous_triggering: Boolean. Enables and disables the source triggering.
         :ivar sweep_direction: Sets the source sweep direction. available values: 'up', 'down'
         :ivar sweep_points: Sets the number of source sweep points. (min: 1, max: 2500)
-        :ivar sweep_range: Sets the source sweep range. available values: 'best', 'auto', 'fixed'  
-        :ivar sweep_space: Sets the source sweep space. available values: 'linear', 'logarithmic' 
-        :ivar sweep_mode: Sets the source sweep mode. available values: 'single', 'double' 
+        :ivar sweep_range: Sets the source sweep range. available values: 'best', 'auto', 'fixed'
+        :ivar sweep_space: Sets the source sweep space. available values: 'linear', 'logarithmic'
+        :ivar sweep_mode: Sets the source sweep mode. available values: 'single', 'double'
         :ivar wait_auto: Enables or disables the initial wait time used for calculating the source wait
             time for the specified channel. The initial wait time is automatically set by the
             instrument and cannot be changed. See :SOURCe:WAIT[:STATe].
@@ -516,6 +516,12 @@ class SubSource(Driver):
             ':SOUR{c}:{f}:RANG:AUTO',
             Boolean
         )
+        self.auto_range_limit = _command(
+            m,
+            ':SOUR{c}:{f}:RANG:AUTO:LLIM?',
+            ':SOUR{c}:{f}:RANG:AUTO:LLIM',
+            Float(-ulim, ulim)
+        )
 
         # for sweep modes
         self.points = _command(
@@ -550,28 +556,6 @@ class SubSource(Driver):
             ':SOUR{c}:LIST:{f}',
             Stream(Float(-ulim, ulim))
         )
-
-    @property
-    def auto_range_limit(self):
-        lower = self._query((':SOUR%s:%s:RANG:AUTO:LLIM?' % (self._channel, self._function), Float))
-        upper = self._query((':SOUR%s:%s:RANG:AUTO:ULIM?' % (self._channel, self._function), Float))
-        return lower, upper
-
-    @auto_range_limit.setter
-    def auto_range_limit(self, values):
-        lower, upper = values[:2]
-        type_ = Float(0, self._ulim)
-        commands = []
-        if lower is not None:
-            lower_str = type_.dump(lower)
-            commands.append(':SOUR%s:%s:RANGE:AUTO:LLIM %s' % (self._channel, self._function, lower_str))
-        if upper is not None:
-            upper_str = type_.dump(upper)
-            commands.append(':SOUR%s:%s:RANGE:AUTO:ULIM %s' % (self._channel, self._function, upper_str))
-        if (lower and upper) and (lower > upper):
-            raise ValueError('The lower limit must be smaller or equal to the upper limit.')
-        self._write('; '.join(commands))
-
 
 # -----------------------------------------------------------------------------
 # Format Command Layer
