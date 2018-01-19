@@ -3,6 +3,7 @@
 import time
 import os
 import traceback
+import json
 from os import path
 from datetime import datetime
 
@@ -22,6 +23,11 @@ mpl.use('Qt5Agg')
 scriptdir = path.dirname(__file__)
 
 
+VMAX = 42.0
+IMAX = 10.0
+NMAX = 100000
+
+
 class MyDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,21 +36,31 @@ class MyDialog(QtWidgets.QDialog):
         addrs = visa.ResourceManager().list_resources()
         idxP, idxB = -1, -1
         for i, a in enumerate(addrs):
-            if '15' in a:
-                idxP = i
-            if '23' in a:
-                idxB = i
+            if 'gpib' in a.lower():
+                if '15' in a:
+                    idxP = i
+                if '23' in a:
+                    idxB = i
         self.ui.cbPPMS.addItems(addrs)
         self.ui.cbPPMS.setCurrentIndex(idxP)
         self.ui.cbB290X.addItems(addrs)
         self.ui.cbB290X.setCurrentIndex(idxB)
-        self.ui.leStart.setValidator(QtGui.QDoubleValidator())
-        self.ui.leStop.setValidator(QtGui.QDoubleValidator())
-        self.ui.leLimit.setValidator(QtGui.QDoubleValidator())
-        self.ui.leIntegration.setValidator(QtGui.QDoubleValidator())
+        self.ui.leStart.setValidator(QtGui.QDoubleValidator(-VMAX, VMAX, 6, self))
+        self.ui.leStop.setValidator(QtGui.QDoubleValidator(-VMAX, VMAX, 6, self))
+        self.ui.leLimit.setValidator(QtGui.QDoubleValidator(0, IMAX, 6, self))
+        self.ui.leIntegration.setValidator(QtGui.QDoubleValidator(8e-6, 2.0, 6, self))
 
         self.ui.cbSource.currentTextChanged[str].connect(self.change_units)
         self.ui.cbUsePpms.stateChanged.connect(self.change_state)
+        self.ui.pbLoad.clicked.connect(self.load_file)
+
+        self.verify = (self.ui.leStart, self.ui.leStop, self.ui.leLimit, self.ui.leIntegration)
+        for l in self.verify:
+            l.textChanged.connect(self.check_inputs)
+
+    def check_inputs(self):
+        ok = self.ui.buttonBox.button(QtWidgets.QDialogButtonBox.Ok)
+        ok.setEnabled(all(l.hasAcceptableInput() for l in self.verify))
 
     def change_state(self, use_ppms):
         self.ui.cbPPMS.setEnabled(bool(use_ppms))
@@ -53,12 +69,56 @@ class MyDialog(QtWidgets.QDialog):
     def change_units(self, mode):
         if mode == 'voltage':
             u, lim = 'V', 'A'
+            self.ui.leStart.validator().setRange(-VMAX, VMAX, 6)
+            self.ui.leStop.validator().setRange(-VMAX, VMAX, 6)
+            self.ui.leLimit.validator().setTop(IMAX)
+            self.ui.leLimit.setText('0.01')
         else:
             u, lim = 'A', 'V'
+            self.ui.leStart.validator().setRange(-IMAX, IMAX, 6)
+            self.ui.leStop.validator().setRange(-IMAX, IMAX, 6)
+            self.ui.leLimit.validator().setTop(VMAX)
+            self.ui.leLimit.setText('10')
         self.ui.lbUnitStart.setText(u)
         self.ui.lbUnitStop.setText(u)
         self.ui.lbUnitLimit.setText(lim)
+        for l in (self.ui.leStart, self.ui.leStop, self.ui.leLimit):
+            l.adapt_color()
 
+    def as_dict(self):
+        return {
+            'use_ppms': self.ui.cbUsePpms.isChecked(),
+            'addr_ppms': self.ui.cbPPMS.currentText(),
+            'addr_b290x': self.ui.cbB290X.currentText(),
+            'four_wire': self.ui.cbFourWire.isChecked(),
+            'source_mode': self.ui.cbSource.currentText(),
+            'start': float(self.ui.leStart.text()),
+            'stop': float(self.ui.leStop.text()),
+            'points': self.ui.sbPoints.value(),
+            'compliance': float(self.ui.leLimit.text()),
+            'integration_time': float(self.ui.leIntegration.text()),
+            'temps': [float(t.strip()) for t in self.ui.leTemps.text().split(',')],
+        }
+
+    def update_from_dict(self, d):
+        self.ui.cbUsePpms.setChecked(d['use_ppms'])
+        self.ui.cbPPMS.setCurrentText(d['addr_ppms'])
+        self.ui.cbB290X.setCurrentText(d['addr_b290x'])
+        self.ui.cbFourWire.setChecked(d['four_wire'])
+        self.ui.cbSource.setCurrentText(d['source_mode'])
+        self.ui.leStart.setText(str(d['start']))
+        self.ui.leStop.setText(str(d['stop']))
+        self.ui.sbPoints.setValue(d['points'])
+        self.ui.leLimit.setText(str(d['compliance']))
+        self.ui.leIntegration.setText(str(d['integration_time']))
+        self.ui.leTemps.setText(','.join(str(t) for t in d['temps']))
+
+    def load_file(self):
+        f, *_ = QtWidgets.QFileDialog.getOpenFileName(self, 'select file', '', '*.json;;*')
+        if f:
+            with open(f, encoding='utf-8') as fp:
+                d = json.load(fp)
+            self.update_from_dict(d)
 
 def main(
         addr_ppms, addr_b290x,
@@ -80,9 +140,8 @@ def main(
     os.makedirs(datadir, exist_ok=True)
 
     print('Data will be saved in: %s' % datadir)
-    with open(path.join(datadir, 'settings.txt'), 'w') as fp:
-        for k, v in sorted(arguments.items(), key=lambda item: item[0]):
-            fp.write('%s=%s\n' % (k, v))
+    with open(path.join(datadir, 'settings.json'), 'w') as fp:
+        json.dump(arguments, fp, indent=2, sort_keys=True)
 
     ppms = PPMS(Visa(addr_ppms)) if use_ppms else None
     smu = B2900(Visa(addr_b290x))
