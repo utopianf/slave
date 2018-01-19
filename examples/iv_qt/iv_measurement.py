@@ -97,7 +97,7 @@ class MyDialog(QtWidgets.QDialog):
             'points': self.ui.sbPoints.value(),
             'compliance': float(self.ui.leLimit.text()),
             'integration_time': float(self.ui.leIntegration.text()),
-            'temps': [float(t.strip()) for t in self.ui.leTemps.text().split(',')],
+            'temps': [float(t.strip()) for t in self.ui.leTemps.text().split(',') if t],
         }
 
     def update_from_dict(self, d):
@@ -205,11 +205,6 @@ if __name__ == '__main__':
     d = MyDialog()
     ret = d.exec_()
     if ret == QtWidgets.QDialog.Accepted:
-        main(d.ui.cbPPMS.currentText(), d.ui.cbB290X.currentText(), d.ui.cbFourWire.isChecked(),
-             d.ui.cbSource.currentText(),
-             float(d.ui.leStart.text()), float(d.ui.leStop.text()), d.ui.sbPoints.value(), float(d.ui.leLimit.text()),
-             float(d.ui.leIntegration.text()),
-             [float(x.strip()) for x in d.ui.leTemps.text().split(',') if x.strip()],
-             d.ui.cbUsePpms.isChecked())
+        main(**d.as_dict())
     else:
         print('Aborting')
