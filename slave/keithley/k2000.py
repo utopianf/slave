@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # E21, (c) 2012-2015, see AUTHORS.  Licensed under the GNU GPL.
-from slave.transport import SimulatedTransport
+# TODO: compatibility with nanovoltmeter (k2182) driver.
 from slave.driver import Command, Driver
 from slave.types import Boolean, Float, Integer, Mapping, Stream, String
 import slave.iec60488 as iec
@@ -17,7 +17,7 @@ R_MAX = 120e6
 _functions = {'current_ac': 'CURR:AC',
               'current': 'CURR:DC',
               'voltage_ac': 'VOLT:AC',
-              'volt_dc': 'VOLT:DC',
+              'voltage': 'VOLT:DC',
               'resistance': 'RES',
               'fresistance': 'FRES',
               'period': 'PER',
@@ -234,12 +234,6 @@ class K2000(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     """Keithley Model2000 Digital Multimeter"""
     def __init__(self, transport):
         super(K2000, self).__init__(transport)
-        if not isinstance(transport, SimulatedTransport):
-            # check identification
-            idns = self.identification
-            logger.debug('identification: %s', idns)
-            if idns[1] != 'MODEL 2000':
-                raise ValueError('Invalid identification: %s', idns)
         self.triggering = Trigger(self._transport, self._protocol)
         self.triggering.continuous_initiation = False
         self.display = Display(self._transport, self._protocol)
