@@ -77,7 +77,7 @@ class Trigger(Driver):
     """
     def __init__(self, transport, protocol):
         super(Trigger, self).__init__(transport, protocol)
-        self.continuous_initiation = Command(
+        self.continuous = self.continuous_mode = self.continuous_initiation = Command(
             ':INIT:CONT?',
             ':INIT:CONT',
             Boolean
