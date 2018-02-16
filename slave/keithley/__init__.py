@@ -5,3 +5,4 @@
 from slave.keithley.k2182 import K2182
 from slave.keithley.k6221 import K6221
 from slave.keithley.k2000 import K2000
+from slave.keithley.k2400 import K2400
