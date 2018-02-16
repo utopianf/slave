@@ -603,6 +603,7 @@ class Output(Driver):
         the source output is automatically turned on when the :INITiate or :READ command
         is sent. Default is True.
     :ivar bool state: Enables or disables the source output.
+    :ivar off_mode: Selects the source condition after output off.
     """
     def __init__(self, transport, protocol, channel=1):
         super().__init__(transport, protocol)
@@ -622,6 +623,8 @@ class Output(Driver):
         self.auto_off = _command(m, ':OUTP{c}:OFF:AUTO?', ':OUTP{c}:OFF:AUTO', Boolean)
         self.auto_on = _command(m, ':OUTP{c}:ON:AUTO?', ':OUTP{c}:ON:AUTO', Boolean)
         self.state = _command(m, ':OUTP{c}?', 'OUTP{c}', Boolean)
+        self.off_mode = _command(m, ':OUTP{c}:OFF:MODE?', ':OUTP{c}:OFF:MODE',
+                                 Mapping({'high-impedance': 'HIZ', 'normal': 'NORM', 'zero': 'ZERO'}))
 
     def save_settings(self, idx=0):
         """Save the channel setup.
@@ -814,13 +817,13 @@ class Setup(object):
 
 class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     _functions = _sense_functions
-    _is_dual = False
+    is_dual = False
 
     def __init__(self, transport: Transport):
         super(B2900, self).__init__(transport)
         self.__check__()
 
-        ch = (1, 2) if self._is_dual else (1,)
+        ch = (1, 2) if self.is_dual else (1,)
         t, p = self._transport, self._protocol
 
         self.sources = tuple(Source(t, p, x) for x in ch)
@@ -908,9 +911,9 @@ class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
             raise ValueError("Change Language mode to DEF from System -> Language")
 
         if model.strip().upper() in ('B2902A', 'B2912A', 'B2962A'):
-            self._is_dual = True
+            self.is_dual = True
         else:
-            self._is_dual = False
+            self.is_dual = False
 
     @staticmethod
     def _parse_channels(channels=(), default=1):
@@ -920,158 +923,3 @@ class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
             channels = channels
         return ','.join(str(c) for c in channels) or default
 
-if __name__ == '__main__':
-    import sys
-    import unittest
-    from random import randint
-    from itertools import product
-    from slave.transport import LinuxGpib, Visa
-
-    if input('Start testing B2900X source-measure unit? (y/N)') not in ('y', 'Y'):
-        sys.exit()
-
-    class TestB2902A(unittest.TestCase):
-        @classmethod
-        def setUpClass(cls):
-            transport = get_transport()
-            cls.b2900 = B2900(transport)
-            cls.b2900r = B2900(transport)
-
-        @classmethod
-        def tearDownClass(cls):
-            cls.b2900.reset()
-
-        def test_setup_triggering(self):
-            for s, cn, t, d, ch in product(
-                ('automatic internal', 'bus', 'timer'),
-                (1, 100000, randint(1, 100000)),
-                (2e-5, 1e5, randint(2, 1e10)/1e5),
-                (0, 100, randint(0, 10000)/100),
-                (1, 2)
-            ):
-                with self.subTest(source=s, count=cn, timer=t, delay=d, channel=ch):
-                    self.b2900.setup.triggering(s, cn, t, d, ch)
-                    idx = ch - 1
-                    self.assertEqual(self.b2900r.triggerings[idx].transient.source, s)
-                    self.assertEqual(self.b2900r.triggerings[idx].acquire.source, s)
-                    self.assertEqual(self.b2900r.triggerings[idx].transient.count, cn)
-                    self.assertEqual(self.b2900r.triggerings[idx].acquire.count, cn)
-                    self.assertAlmostEqual(self.b2900r.triggerings[idx].transient.timer, t, delta=0.01)
-                    self.assertAlmostEqual(self.b2900r.triggerings[idx].acquire.delay, d, delta=0.01)
-
-        def test_setup_fixed_source(self):
-            self.b2900.reset()
-            for f, v, c in product(
-                    ('voltage', 'current'),
-                    (0, 0.01, randint(0, 100)/10000, None),
-                    (1, 2)
-            ):
-                with self.subTest(function=f, value=v, channel=c):
-
-                    for trig in self.b2900.triggerings:
-                        trig.count = 100
-                    self.b2900.setup.fixed_source(f, v, c)
-                    idx = c - 1
-                    self.assertEqual(self.b2900r.triggerings[idx].transient.count, 1)
-                    self.assertEqual(self.b2900r.triggerings[idx].acquire.count, 1)
-                    self.assertEqual(self.b2900r.sources[idx].function_mode, f)
-                    if v is not None:
-                        if f == 'voltage':
-                            self.assertAlmostEqual(self.b2900r.sources[idx].voltage.level, v, delta=0.001)
-                            self.assertAlmostEqual(self.b2900r.sources[idx].voltage.level_triggered, v, delta=0.001)
-                        else:
-                            self.assertAlmostEqual(self.b2900r.sources[idx].current.level, v, delta=0.001)
-                            self.assertAlmostEqual(self.b2900r.sources[idx].current.level_triggered, v, delta=0.001)
-
-        def test_sweep_source(self):
-            self.b2900.reset()
-            for f, start, stop, points, ch in product(
-                    ('voltage', 'current'),
-                    (0, 0.1),
-                    (0.15, 0.05),
-                    (1, 101, randint(1, 101)),
-                    (1, 2)
-            ):
-                with self.subTest(function=f, start=start, stop=stop, points=points, channel=ch):
-                    idx = ch - 1
-                    self.b2900.setup.sweep_source(f, start, stop, points, ch)
-                    self.assertEqual(self.b2900r.sources[idx].function_mode, f)
-                    sub = self.b2900r.sources[idx].voltage if f == 'voltage' else self.b2900r.sources[idx].current
-                    self.assertAlmostEqual(sub.sweep_start, start, delta=1e-4)
-                    self.assertAlmostEqual(sub.sweep_stop, stop, delta=1e-4)
-                    self.assertEqual(sub.points, points)
-                    self.assertEqual(self.b2900r.triggerings[idx].transient.count, points)
-                    self.assertEqual(self.b2900r.triggerings[idx].acquire.count, points)
-                    self.b2900.initiate(channels=(ch,))
-                    self.b2900.wait_to_continue()
-                    data = self.b2900.fetch_array((ch,))
-                    if isinstance(data, float):
-                        length = 1
-                    else:
-                        elms = self.b2900r.format.sense_elements
-                        if isinstance(elms, str):
-                            length = len(data)
-                        else:
-                            length = len(data) / len(elms)
-                    self.assertEqual(length, points)
-
-        def test_setup_sense(self):
-            for f, ar, r, nplc, compl, ch in product(
-                    ('voltage', 'current'),
-                    (True, False, None),
-                    (0.1, 1, None),
-                    (0.01, 10, None),
-                    (0, 0.01, None),
-                    (1, 2)
-            ):
-                with self.subTest(function=f, auto_range=ar, range_=r, nplc=nplc, compliance=compl, channel=ch):
-                    if ar and r:
-                        continue
-                    self.b2900.setup.sense(f, ar, r, nplc, compl, ch)
-                    idx = ch - 1
-                    sub = self.b2900r.senses[idx].voltage if f == 'voltage' else self.b2900r.senses[idx].current
-                    if ar is not None:
-                        self.assertEqual(sub.auto_range, ar)
-                    if r is not None:
-                        self.assertGreaterEqual(sub.range, r)
-                    if nplc is not None:
-                        self.assertAlmostEqual(sub.nplc, nplc, delta=0.01)
-                    if compl is not None:
-                        self.assertAlmostEqual(sub.compliance, compl, delta=0.01)
-
-        def test_setup_resistance(self):
-            for e, m, c in product(
-                    (True, False, None),
-                    ('auto', 'manual', None),
-                    (1, 2)
-            ):
-                with self.subTest(enable=e, mode=m, channel=c):
-                    self.b2900.setup.resistance(e, m, c)
-                    idx = c - 1
-                    if e is None:
-                        pass
-                    elif e:
-                        self.assertIn('resistance', self.b2900r.senses[idx].functions)
-                    else:
-                        self.assertNotIn('resistance', self.b2900r.senses[idx].functions)
-                    if m is not None:
-                        self.assertEqual(self.b2900r.senses[idx].resistance.mode, m)
-
-    def get_transport():
-        address = input('Please input gpib or visa-style address (default: 23): ')
-        if not address:
-            address = 23
-        try:
-            address = int(address)
-        except ValueError:
-            pass
-        if isinstance(address, int):
-            if sys.platform.startswith('linux'):
-                transport = LinuxGpib(address)
-            else:
-                transport = Visa('GPIB0::%s' % address)
-        else:
-            transport = Visa(address)
-        return transport
-
-    unittest.main()
