@@ -492,7 +492,7 @@ class LinuxGpib(Transport):
     def clear(self):
         """Issues a device clear command."""
         ibsta = self._lib.ibclr()
-        self._check_status()
+        self._check_status(ibsta)
 
     def trigger(self):
         """Triggers the device.
