@@ -466,6 +466,9 @@ class LinuxGpib(Transport):
             ct.c_int(board), ct.c_int(primary), ct.c_int(secondary),
             ct.c_int(timeout), ct.c_int(send_eoi), ct.c_int(eos)
         )
+        if self._device == -1:
+            self._device = None
+            raise self.Error('failed to open LinuxGpib device (primary address: %s, board: %s)' % (primary, board))
         self._ibsta_parser = Register(LinuxGpib.STATUS)
 
     def __del__(self):
