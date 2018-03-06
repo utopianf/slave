@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
-from collections.abc import Iterable
+from collections import Iterable
 
 import slave.iec60488 as iec
 from slave.driver import Command, Driver
@@ -101,7 +101,7 @@ class Triggering(Driver):
         :param channel: Trigger channel. 1 or 2.
         :param layer: Trigger layer. 'TRIG', 'ARM', or 'ALL').
         :param action: Trigger Action. 'ACQ', 'TRAN', or 'ALL'"""
-        super().__init__(transport, protocol)
+        super(Triggering, self).__init__(transport, protocol)
 
         if layer not in ('TRIG', 'ARM', 'ALL'):
             raise ValueError('Unknown layer: \'{0}\''.format(layer))
@@ -442,14 +442,17 @@ class Source(Driver):
 
     def invert(self, functions=()):
         """Inverts source. Effective only when using fixed source"""
-        if not functions:
-            functions = 'curr', 'volt'
-        if 'curr' in functions:
-            self.curr.level *= -1
-            self.curr.level_triggered *= -1
-        if 'volt' in functions:
-            self.volt.level *= -1
-            self.volt.level_triggered *= -1
+        if isinstance(functions, str):
+            functions = (functions,)
+        for f in functions:
+            if f.lower().startswith('curr'):
+                self.current.level_triggered *= -1
+                self.current.level *= -1
+            elif f.lower().startswith('volt'):
+                self.voltage.level_triggered *= -1
+                self.voltage.level *= -1
+            else:
+                raise ValueError('Unknown function: %s' % f)
 
     @property
     def functions(self):
@@ -466,7 +469,7 @@ class SubSource(Driver):
     :ivar tuple auto_range_limit: limits of source range for automatic range determination
     """
     def __init__(self, transport, protocol, channel, function='VOLT', ulim=V_MAX):
-        super().__init__(transport, protocol)
+        super(SubSource, self).__init__(transport, protocol)
         self._channel = channel
         self._function = function
         self._ulim = ulim
@@ -566,8 +569,10 @@ class Format(Driver):
     _functions = _sense_functions
 
     def __init__(self, transport, protocol):
-        super().__init__(transport, protocol)
-        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions)))
+        super(Format, self).__init__(transport, protocol)
+        self.elements = self.sense_elements = Command(
+            ':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions))
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -606,7 +611,7 @@ class Output(Driver):
     :ivar off_mode: Selects the source condition after output off.
     """
     def __init__(self, transport, protocol, channel=1):
-        super().__init__(transport, protocol)
+        super(Output, self).__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
         self.filter_auto = _command(m, ':OUTP{c}:FILT:AUTO?', ':OUTP{c}:FILT:AUTO', Boolean)
@@ -644,7 +649,7 @@ class Trace(Driver):
     :ivar free: the available size (available) and the total size (total) of the trace buffer.
     :ivar points: the size of the trace buffer"""
     def __init__(self, transport, protocol, channel=1):
-        super().__init__(transport, protocol)
+        super(Trace, self).__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
         self.free = _command(m, ':TRAC{c}:FREE?', ':TRAC{c}:FREE', [Integer, Integer])
@@ -819,7 +824,7 @@ class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     _functions = _sense_functions
     is_dual = False
 
-    def __init__(self, transport: Transport):
+    def __init__(self, transport):
         super(B2900, self).__init__(transport)
         self.__check__()
 
