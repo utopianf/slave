@@ -13,7 +13,7 @@ except ImportError:
     typing = None
 
 
-_sense_functions = {
+_elements = {
     'voltage': 'VOLT',
     'current': 'CURR',
     'resistance': 'RES',
@@ -21,7 +21,11 @@ _sense_functions = {
     'status': 'STAT',
     'source': 'SOUR',
 }
-_sense_functions_with_quotes = {name: '"' + func + '"' for name, func in _sense_functions.items()}
+_sense_functions = {
+    'voltage': '"VOLT"',
+    'current': '"CURR"',
+    'resistance': '"RES"',
+}
 _source_functions = {
     'voltage': 'VOLT',
     'current': 'CURR',
@@ -34,8 +38,8 @@ is in the Initiated state."""
 
 
 # Maximum measure (source) values for B2902A
-I_MAX = 10
-V_MAX = 210
+I_MAX = 10.0
+V_MAX = 210.0
 R_MAX = 200e6
 
 
@@ -192,7 +196,6 @@ class Sense(Driver):
         time is defined as the time the measurement channel cannot start measurement after
         the start of a DC output or the trailing edge of a pulse."""
     _functions = _sense_functions
-    _functions_with_quotes = _sense_functions_with_quotes
 
     def __init__(self, transport, protocol, channel=1):
         super(Sense, self).__init__(transport, protocol)
@@ -204,15 +207,25 @@ class Sense(Driver):
         self.wait_offset = _command(m, ':SENS{c}:WAIT:OFFS?', ':SENS{c}:WAIT:OFFS', Float(0, 1))
         self.wait_state = _command(m, ':SENS{c}:WAIT?', ':SENS{c}:WAIT', Boolean)
 
-        self.volt = self.voltage = SubSense(self._transport, self._protocol, channel, 'VOLT', V_MAX)
-        self.curr = self.current = SubSense(self._transport, self._protocol, channel, 'CURR', I_MAX)
-        self.res = self.resistance = SubSense(self._transport, self._protocol, channel, 'RES', R_MAX)
+        self.voltage = SubSense(self._transport, self._protocol, channel, 'VOLT', V_MAX)
+        self.current = SubSense(self._transport, self._protocol, channel, 'CURR', I_MAX)
+        self.resistance = SubSense(self._transport, self._protocol, channel, 'RES', R_MAX)
+
+    def enable(self, function):
+        Command(write=':SENS{c}:FUNC:ON'.format(c=self._channel), type_=Mapping(self._functions)).write(
+            self._transport, self._protocol, function
+        )
+
+    def disable(self, function):
+        Command(write=':SENS{c}:FUNC:OFF'.format(c=self._channel), type_=Mapping(self._functions)).write(
+            self._transport, self._protocol, function
+        )
 
     def enable_all_functions(self):
-        self._write(':SENS%s:FUNC:ALL' % self._channel)
+        self._write(':SENS{c}:FUNC:ALL'.format(c=self._channel))
 
     def disable_all_functions(self):
-        self._write(':SENS%s:FUNC:OFF:ALL' % self._channel)
+        self._write(':SENS{c}:FUNC:OFF:ALL'.format(c=self._channel))
 
     def get_data(self, offset=None, size=None):
         """Returns the array data which contains all of the current measurement data, voltage
@@ -256,14 +269,14 @@ class Sense(Driver):
     @property
     def available_functions(self):
         """list of available functions"""
-        return list(self._functions)
+        return tuple(self._functions)
 
     @property
     def functions(self):
         return self._query(
             (
                 ':SENS{c}:FUNC?'.format(c=self._channel),
-                Stream(Mapping(self._functions_with_quotes))
+                Stream(Mapping(self._functions))
             )
         )
 
@@ -271,17 +284,10 @@ class Sense(Driver):
     def functions(self, value):
         if isinstance(value, str):
             value = (value,)
-        Command(
-            write=':SENS{c}:FUNC'.format(c=self._channel),
-            type_=Stream(Mapping(self._functions_with_quotes))
-        ).write(self._transport, self._protocol, *value)
-
-        for f in self.functions:
+        self.enable_all_functions()
+        for f in self.available_functions:
             if f not in value:
-                Command(
-                    write=':SENS{c}:FUNC:OFF'.format(c=self._channel),
-                    type_=Stream(Mapping(self._functions_with_quotes))
-                ).write(self._transport, self._protocol, f)
+                self.disable(f)
 
 
 class SubSense(Driver):
@@ -365,8 +371,8 @@ class Source(Driver):
         :ivar continuous_triggering: Boolean. Enables and disables the source triggering.
         :ivar sweep_direction: Sets the source sweep direction. available values: 'up', 'down'
         :ivar sweep_points: Sets the number of source sweep points. (min: 1, max: 2500)
-        :ivar sweep_range: Sets the source sweep range. available values: 'best', 'auto', 'fixed'
-        :ivar sweep_space: Sets the source sweep space. available values: 'linear', 'logarithmic'
+        :ivar sweep_ranging: Sets the source sweep range. available values: 'best', 'auto', 'fixed'
+        :ivar sweep_spacing: Sets the source sweep space. available values: 'linear', 'logarithmic'
         :ivar sweep_mode: Sets the source sweep mode. available values: 'single', 'double'
         :ivar wait_auto: Enables or disables the initial wait time used for calculating the source wait
             time for the specified channel. The initial wait time is automatically set by the
@@ -403,42 +409,20 @@ class Source(Driver):
             ':SOUR{c}:FUNC:TRIG:CONT',
             Boolean
         )
-        self.sweep_direction = _command(
-            m,
-            ':SOUR{c}:SWE:DIR?',
-            ':SOUR{c}:SWE:DIR',
-            Mapping({'up': 'UP', 'down': 'DOWN'})
-        )
-        self.sweep_points = _command(
-            m,
-            write=':SOUR{c}:SWE:POIN',
-            type_=Integer(1, 2500)
-        )
-        self.sweep_range = _command(
-            m,
-            ':SOUR{c}:SWE:RANG?',
-            ':SOUR{c}:SWE:RANG',
-            Mapping({'best': 'BEST', 'fixed': 'FIX', 'auto': 'AUTO'})
-        )
-        self.sweep_space = _command(
-            m,
-            ':SOUR{c}:SWE:SPAC?',
-            ':SOUR{c}:SWE:SPAC',
-            Mapping({'linear': 'LIN', 'logarithmic': 'LOG'})
-        )
-        self.sweep_mode = _command(
-            m,
-            ':SOUR{c}:SWE:STA?',
-            ':SOUR{c}:SWE:STA',
-            Mapping({'single': 'SING', 'double': 'DOUB'})
-        )
+        self.sweep = SourceSweep(transport, protocol, channel)
+        self.sweep_direction = object.__getattribute__(self.sweep, 'direction')
+        self.sweep_mode = object.__getattribute__(self.sweep, 'mode')
+        self.sweep_points = object.__getattribute__(self.sweep, 'points')
+        self.sweep_ranging = self.sweep_range = object.__getattribute__(self.sweep, 'ranging')
+        self.sweep_spacing = self.sweep_space = object.__getattribute__(self.sweep, 'spacing')
+
         self.wait_auto = _command(m, ':SOUR{c}:WAIT:AUTO?', ':SOUR{c}:WAIT:AUTO', Boolean)
         self.wait_gain = _command(m, ':SOUR{c}:WAIT:GAIN?', ':SOUR{c}:WAIT:GAIN', Float(0, 100))
         self.wait_offset = _command(m, ':SOUR{c}:WAIT:OFFS?', ':SOUR{c}:WAIT:OFFS', Float(0, 1))
         self.wait_state = _command(m, ':SOUR{c}:WAIT?', ':SOUR{c}:WAIT', Boolean)
 
-        self.curr = self.current = SubSource(transport, protocol, channel, 'CURR', I_MAX)
-        self.volt = self.voltage = SubSource(transport, protocol, channel, 'VOLT', V_MAX)
+        self.current = SubSource(transport, protocol, channel, 'CURR', I_MAX)
+        self.voltage = SubSource(transport, protocol, channel, 'VOLT', V_MAX)
 
     def invert(self, functions=()):
         """Inverts source. Effective only when using fixed source"""
@@ -458,6 +442,48 @@ class Source(Driver):
     def functions(self):
         """List of available functions"""
         return list(self._functions)
+
+
+class SourceSweep(Driver):
+    """The sweep command subsystem of the Source node.
+    :ivar direction: Sweep from start to stop ('up') or from stop to start ('down')
+    :ivar spacing: The sweep type, valid are 'linear', or 'log'
+    :ivar int points: The number of sweep points in the range 1 to 2500.
+    :ivar ranging: The sweep ranging, valid are 'auto', 'best' and 'fixed'.
+    """
+    def __init__(self, transport, protocol, channel):
+        super(SourceSweep, self).__init__(transport, protocol)
+        self._channel = channel
+        m = {'c': channel}
+        self.direction = _command(
+            m,
+            ':SOUR{c}:SWE:DIR?',
+            ':SOUR{c}:SWE:DIR',
+            Mapping({'up': 'UP', 'down': 'DOWN'})
+        )
+        self.points = _command(
+            m,
+            write=':SOUR{c}:SWE:POIN',
+            type_=Integer(1, 2500)
+        )
+        self.ranging = _command(
+            m,
+            ':SOUR{c}:SWE:RANG?',
+            ':SOUR{c}:SWE:RANG',
+            Mapping({'best': 'BEST', 'fixed': 'FIX', 'auto': 'AUTO'})
+        )
+        self.spacing = _command(
+            m,
+            ':SOUR{c}:SWE:SPAC?',
+            ':SOUR{c}:SWE:SPAC',
+            Mapping({'linear': 'LIN', 'logarithmic': 'LOG'})
+        )
+        self.mode = _command(
+            m,
+            ':SOUR{c}:SWE:STA?',
+            ':SOUR{c}:SWE:STA',
+            Mapping({'single': 'SING', 'double': 'DOUB'})
+        )
 
 
 class SubSource(Driver):
@@ -527,25 +553,25 @@ class SubSource(Driver):
         )
 
         # for sweep modes
-        self.points = _command(
+        self.points = self.sweep_points = _command(
             m,
             ':SOUR{c}:{f}:POIN?',
             ':SOUR{c}:{f}:POIN',
             Integer(1, 2500)
         )
-        self.step = _command(
+        self.step = self.sweep_step = _command(
             m,
             ':SOUR{c}:{f}:STEP?',
             ':SOUR{c}:{f}:STEP',
             Float(min=0)
         )
-        self.sweep_start = _command(
+        self.start = self.sweep_start = _command(
             m,
             ':SOUR{c}:{f}:STAR?',
             ':SOUR{c}:{f}:STAR',
             Float(-ulim, ulim)
         )
-        self.sweep_stop = _command(
+        self.stop = self.sweep_stop = _command(
             m,
             ':SOUR{c}:{f}:STOP?',
             ':SOUR{c}:{f}:STOP',
@@ -566,12 +592,12 @@ class SubSource(Driver):
 
 
 class Format(Driver):
-    _functions = _sense_functions
+    _elements = _elements
 
     def __init__(self, transport, protocol):
         super(Format, self).__init__(transport, protocol)
         self.elements = self.sense_elements = Command(
-            ':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions))
+            ':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._elements))
         )
 
 
@@ -686,7 +712,7 @@ class Setup(object):
         :param delay: trigger delay
         :param channel: source channel, 1 or 2.
         """
-        trig = self._smu.triggerings[channel - 1]
+        trig = self._smu.triggerings[channel - 1]  # type: Triggering
         if source is not None:
             trig.source = source
         if count is not None:
@@ -699,54 +725,55 @@ class Setup(object):
     def fixed_source(self, function, value=None, channel=1):
         """Changes source function and sets output value. Also sets trigger count 1.
 
-        :param function: source function, 'volt(age)' or 'curr(ent)'
-        :param value: source value
-        :param channel: SMU channel, default is 1
+        :param str function: source function, 'volt(age)' or 'curr(ent)'
+        :param float value: source value
+        :param int channel: SMU channel, default is 1
         """
-        if function not in ('volt',  'voltage', 'curr', 'current'):
-            raise ValueError("Invalid function: %r" % function)
         source = self._smu.sources[channel-1]
+        if function.lower().startswith('volt'):
+            sub = source.voltage
+        elif function.lower().startswith('curr'):
+            sub = source.current
+        else:
+            raise ValueError("Invalid function: %r" % function)
 
         self.triggering(count=1, channel=channel)
         source.function_mode = function
         source.function_shape = 'dc'
-        if function[:4] == 'volt':
-            sub = source.voltage
-        elif function[:4] == 'curr':
-            sub = source.current
 
         sub.mode = 'fixed'
         if value is not None:
             sub.level = value
             sub.level_triggered = value
 
-    def fixed_source_with_compensation(self, function, value, channel=1):
+    def fixed_source_with_compensation(self, function, value=None, channel=1):
         """ Sets up offset compensation by source inversion. ALso sets trigger count 2."""
-        trig = self._smu.triggerings[channel - 1]
-        source = self._smu.sources[channel - 1]
+        source = self._smu.sources[channel - 1]  # type: Source
         source.function_mode = function
-        trig.count = 2
-        if function == 'volt':
-            source.volt.mode = 'list'
-            source.volt.list = (value, -value)
-        elif function == 'curr':
-            source.curr.mode = 'list'
-            source.curr.list = (value, -value)
+        self.triggering(count=2, channel=channel)
+        if function.lower().startswith('volt'):
+            source.voltage.mode = 'list'
+            value = source.voltage.level if value is None else value
+            source.voltage.list = (value, -value)
+        elif function.lower().startswith('curr'):
+            source.current.mode = 'list'
+            value = source.current.level if value is None else value
+            source.current.list = (value, -value)
 
     def sweep_source(self, function, start, stop, points, channel=1):
         """Switch function mode and setup for sweep measurement
 
-        :param function: source function, 'volt(age)' or 'curr(ent)'
-        :param start: initial source value
-        :param stop: final source value
-        :param points: number of sweep points
-        :param channel: SMU channel, '', 1, or 2.
+        :param str function: source function, 'volt(age)' or 'curr(ent)'
+        :param float start: initial source value
+        :param float stop: final source value
+        :param int points: number of sweep points
+        :param int channel: SMU channel, 1, or 2.
         """
         source = self._smu.sources[channel-1]
-        if function[:4] == 'volt':
-            sub = source.volt
-        elif function[:4] == 'curr':
-            sub = source.curr
+        if function.lower().startswith('volt'):
+            sub = source.voltage
+        elif function.lower().startswith('curr'):
+            sub = source.current
         else:
             raise ValueError('Invalid function: %r' % function)
 
@@ -759,32 +786,32 @@ class Setup(object):
         sub.sweep_stop = stop
         sub.points = points
 
-    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None, channel=1,
-              four_wire=None, integration_time=None):
+    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None,
+              four_wire=None, integration_time=None, channel=1):
         """Sets up voltage or current sense parameters.
 
         ..note: four wire settings apply both modes. to avoid confusion, this function does not support them.
 
-        :param function: 'volt' or 'curr'
+        :param function: 'voltage' or 'current'
         :param auto_range: bool
         :param range_: upper limit of the sense range
         :param nplc: number of power line cycles (integration time in (1/50) seconds)
         :param compliance: sense compliance
-        :param channel: SMU channel, 1, or 2.
         :param four_wire: activate or deactivate four_wire sensing
         :param integration_time: integration time in seconds
+        :param channel: SMU channel, 1, or 2.
         """
         sense = self._smu.senses[channel-1]
-        if auto_range and range_:
+        if auto_range and (range_ is not None):
             raise ValueError('Cannot enable auto_range and set range at the same time.')
-        if function[:4] == 'volt':
+        if None not in (nplc, integration_time):
+            raise ValueError('"nplc" and "integration_time" are mutually exclusive.')
+        if function.lower().startswith('volt'):
             sub = sense.voltage
-        elif function[:4] == 'curr':
+        elif function.lower().startswith('curr'):
             sub = sense.current
         else:
             raise ValueError('Invalid function: %r' % function)
-        if nplc is not None and integration_time is not None:
-            raise ValueError('"nplc" and "integration_time" are mutually exclusive.')
 
         if four_wire is not None:
             sense.four_wire = four_wire
@@ -804,15 +831,15 @@ class Setup(object):
         :param enable: None, True, or False
         :param mode: None, 'auto' or 'manual'
         :param channel: 1 or 2"""
-        sense = self._smu.senses[channel - 1]
+        sense = self._smu.senses[channel - 1]  # type: Sense
         if enable is None:
             pass
         elif enable:
-            sense.functions = tuple(set(list(sense.functions) + ['resistance']))  # 'res'を付け足して、重複を削除
+            sense.enable('resistance')
         else:
-            sense.functions = tuple(f for f in sense.functions if f != 'resistance')
+            sense.disable('resistance')
         if mode:
-            sense.res.mode = mode
+            sense.resistance.mode = mode
 
 
 # -----------------------------------------------------------------------------
@@ -821,7 +848,6 @@ class Setup(object):
 
 
 class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
-    _functions = _sense_functions
     is_dual = False
 
     def __init__(self, transport):
@@ -859,7 +885,7 @@ class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
         self.format = Format(self._transport, self._protocol)
         self.setup = Setup(self)
 
-        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions)))
+        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(_elements)))
 
     def beep(self, freq=200, duration=1):
         self._write(":SYST:BEEP:STAT ON")
@@ -906,19 +932,20 @@ class B2900(iec.IEC60488, iec.Trigger, iec.StoredSetting):
 
     def __check__(self):
         if isinstance(self._transport, SimulatedTransport):
-            return
-        maker, model, serial, revision = self.identification
-        # Valid IDN: Agilent Technologies,model,serial,revision
-        if not re.fullmatch(r'B29[0-9][0-9][A-Z]?', model):
-            raise ValueError("Unknown model: '{0}'".format(model))
-        lang = self._query((':SYST:LANG?', String))
-        if lang != '"DEF"':
-            raise ValueError("Change Language mode to DEF from System -> Language")
-
-        if model.strip().upper() in ('B2902A', 'B2912A', 'B2962A'):
             self.is_dual = True
         else:
-            self.is_dual = False
+            maker, model, serial, revision = self.identification
+            # Valid IDN: Agilent Technologies,model,serial,revision
+            if not re.fullmatch(r'B29[0-9][0-9][A-Z]?', model):
+                raise ValueError("Unknown model: '{0}'".format(model))
+            lang = self._query((':SYST:LANG?', String))
+            if lang != '"DEF"':
+                raise ValueError("Change Language mode to DEF from System -> Language")
+
+            if model.strip().upper() in ('B2902A', 'B2912A', 'B2962A'):
+                self.is_dual = True
+            else:
+                self.is_dual = False
 
     @staticmethod
     def _parse_channels(channels=(), default=1):
