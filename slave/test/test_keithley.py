@@ -6,7 +6,7 @@ from __future__ import (absolute_import, division,
 from future.builtins import *
 import collections
 
-from slave.keithley import K2182, K6221
+from slave.keithley import K2182, K6221, K2400
 from slave.transport import SimulatedTransport
 
 
@@ -18,3 +18,7 @@ def test_K2182():
 def test_K6221():
     # Test if instantiation fails
     K6221(SimulatedTransport())
+
+def test_k2400():
+    # Test if instantiation fails
+    K2400(SimulatedTransport())
