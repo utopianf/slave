@@ -176,5 +176,5 @@ class TestB2900(object):
                 else:
                     assert 'resistance' not in self.b2900.senses[c-1].functions
             if m is not None:
-                assert self.b2900.senses[c-1].resistance.mode, m
+                self.assert_command_equal(self.b2900.senses[c-1].resistance, 'mode', m)
 
