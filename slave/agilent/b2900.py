@@ -118,6 +118,9 @@ class Triggering(Driver):
         m = self._mapping = {'c': self._channel, 'l': self._layer, 'a': self._action}
 
         if action == 'ALL':
+            # Writing values for action 'ALL' (e.g. :TRIG:ALL:COUN 1000) changes both TRANsient and ACQuire actions.
+            # However, we cannot query set values by using e.g. * :TRIG:ALL:COUN?.
+            # So, set all commands in 'ALL' actions write-only by setting mode='wo'.
             mode = 'wo'
             self.transient = Triggering(transport, protocol, channel, layer, 'TRAN')
             self.acquire = Triggering(transport, protocol, channel, layer, 'ACQ')
@@ -448,7 +451,7 @@ class SourceSweep(Driver):
     """The sweep command subsystem of the Source node.
     :ivar direction: Sweep from start to stop ('up') or from stop to start ('down')
     :ivar spacing: The sweep type, valid are 'linear', or 'log'
-    :ivar int points: The number of sweep points in the range 1 to 2500.
+    :ivar int points: The number of sweep points in the range 1 to 2500 (write only).
     :ivar ranging: The sweep ranging, valid are 'auto', 'best' and 'fixed'.
     """
     def __init__(self, transport, protocol, channel):
@@ -461,6 +464,8 @@ class SourceSweep(Driver):
             ':SOUR{c}:SWE:DIR',
             Mapping({'up': 'UP', 'down': 'DOWN'})
         )
+        # to query number of sweep points we need to use "[:SOURce]:<CURRent|VOLTage>:POINts?".
+        # see discussions on https://github.com/t-onoz/slave/pull/1
         self.points = _command(
             m,
             write=':SOUR{c}:SWE:POIN',
