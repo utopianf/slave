@@ -15,6 +15,7 @@ from slave.transport import SimulatedTransport
 
 class TestB2900(object):
     b2900 = B2900(SimulatedTransport())
+    channels = (1, 2) if b2900.is_dual else (1,)
     ATOL = 1e-6
 
     @staticmethod
@@ -36,7 +37,7 @@ class TestB2900(object):
                 (1, 100000, randint(1, 100000)),
                 (2e-5, 1e5, randint(2, 1e10) / 1e5),
                 (0, 100, randint(0, 10000) / 100),
-                (1, 2)
+                self.channels
         ):
             self.b2900.setup.triggering(s, cn, t, d, ch)
             idx = ch - 1
@@ -62,7 +63,7 @@ class TestB2900(object):
         for f, v, c in product(
                 ('voltage', 'current'),
                 (0, 0.01, randint(0, 100) / 10000, None),
-                (1, 2)
+                self.channels
         ):
             for trig in self.b2900.triggerings:
                 trig.count = TRIGGER_COUNT_BEFORE
@@ -86,7 +87,7 @@ class TestB2900(object):
         for f, v, c in product(
                 ('voltage', 'current'),
                 (0, 0.01, randint(0, 100) / 10000, None),
-                (1, 2)
+                self.channels
         ):
             for trig in self.b2900.triggerings:
                 trig.count = TRIGGER_COUNT_BEFORE
@@ -109,7 +110,7 @@ class TestB2900(object):
                 (0, 0.1),
                 (0.15, 0.05),
                 (1, 11, randint(1, 11)),
-                (1, 2)
+                self.channels
         ):
             self.b2900.setup.sweep_source(f, start, stop, points, ch)
             source = self.b2900.sources[ch - 1]  # type: B2900.Source
@@ -139,7 +140,7 @@ class TestB2900(object):
                 (0, uniform(0, 0.1), None),
                 (True, False, None),
                 (0.1, uniform(0.01, 0.1), None),
-                (1, 2)
+                self.channels
         ):
             if (auto_range and (range_ is not None)) or (None not in (nplc, integration_time)):
                 with pytest.raises(ValueError):
@@ -164,7 +165,7 @@ class TestB2900(object):
         for e, m, c in product(
                 (True, False, None),
                 ('auto', 'manual', None),
-                (1, 2)
+                self.channels
         ):
             self.b2900.setup.resistance(e, m, c)
             if not isinstance(self.b2900._transport, SimulatedTransport):
