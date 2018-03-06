@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Keithley Model 2400 Source-Measure Unit (WIP)"""
+"""Keithley Model 2400 Source-Measure Unit"""
+import itertools
 import slave.iec60488 as iec
 from slave.driver import Command, Driver
-from slave.transport import Transport
 from slave.types import Boolean, Float, Integer, Mapping, Stream
 
 try:
@@ -11,15 +11,15 @@ except ImportError:
     typing = None
 
 
-_sense_functions = {
+_format_elements = {
     'voltage': 'VOLT',
     'current': 'CURR',
     'resistance': 'RES',
     'time': 'TIME',
-    'status': 'STAT',
-    'source': 'SOUR',
+    'status': 'STAT'
 }
-_sense_functions_with_quotes = {
+
+_sense_functions = {
     'voltage': '"VOLT:DC"',
     'current': '"CURR:DC"',
     'resistance': '"RES"'
@@ -49,8 +49,8 @@ is in the Initiated state."""
 
 
 # Maximum measure (source) values for B2902A
-I_MAX = 10
-V_MAX = 210
+I_MAX = 10.0
+V_MAX = 210.0
 R_MAX = 200e6
 
 
@@ -79,10 +79,10 @@ class Triggering(Driver):
     """
     def __init__(self, transport, protocol, channel=1, layer='TRIG'):
         """
-        :param channel: Trigger channel (Not used).
+        :param channel: Trigger channel (Not used for K2400).
         :param layer: Trigger layer. 'TRIG' or 'ARM'.
         """
-        super().__init__(transport, protocol)
+        super(Triggering, self).__init__(transport, protocol)
 
         if layer not in ('TRIG', 'ARM'):
             raise ValueError('Unknown layer: \'{0}\''.format(layer))
@@ -131,28 +131,36 @@ class Triggering(Driver):
 
 class Sense(Driver):
     """
-    :ivar wait_auto: Enables or disables the initial wait time used for calculating the measurement wait
-        time for the specified channel. The initial wait time is automatically set by the
-        instrument and cannot be changed. See :SENSe:WAIT[:STATe].
-    :ivar wait_gain: Sets the gain value used for calculating the measurement wait time for the specified
-        channel.
-    :ivar wait_offset: Sets the offset value used for calculating the measurement wait time for the specified
-        channel.
-    :ivar wait_state: Enables or disables the measurement wait time for the specified channel. The wait
-        time is defined as the time the measurement channel cannot start measurement after
-        the start of a DC output or the trailing edge of a pulse."""
-    _functions = _sense_functions
-    _functions_with_quotes = _sense_functions_with_quotes
-
+    :ivar remote_sense: Enables or disables remote sensing (four-wire meausurements)
+    :ivar voltage: The sense voltage command subsystem
+    :ivar current: The sense current command subsystem
+    :ivar resistance: The sense resistance command subsystem
+    """
     def __init__(self, transport, protocol, channel=1):
         super(Sense, self).__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
         self.remote_sense = self.four_wire = _command(m, 'SYST:RSEN?', ':SYST:RSEN', Boolean)
 
-        self.volt = self.voltage = SubSense(self._transport, self._protocol, channel, 'VOLT', V_MAX)
-        self.curr = self.current = SubSense(self._transport, self._protocol, channel, 'CURR', I_MAX)
-        self.res = self.resistance = SubSense(self._transport, self._protocol, channel, 'RES', R_MAX)
+        self.voltage = SubSense(self._transport, self._protocol, channel, 'VOLT', V_MAX)
+        self.current = SubSense(self._transport, self._protocol, channel, 'CURR', I_MAX)
+        self.resistance = SubSense(self._transport, self._protocol, channel, 'RES', R_MAX)
+
+    def enable(self, function):
+        """Enables a function.
+
+        :param function: 'voltage', 'current', or 'resistance'."""
+        Command(write=':SENS%s:FUNC:ON' % self._channel, type_=Mapping(_sense_functions)).write(
+            self._transport, self._protocol, function
+        )
+
+    def disable(self, function):
+        """Disables a function.
+
+        :param function: 'voltage', 'current', or 'resistance'."""
+        Command(write=':SENS%s:FUNC:OFF' % self._channel, type_=Mapping(_sense_functions)).write(
+            self._transport, self._protocol, function
+        )
 
     def enable_all_functions(self):
         self._write(':SENS%s:FUNC:ALL' % self._channel)
@@ -209,7 +217,7 @@ class Sense(Driver):
         return self._query(
             (
                 ':SENS{c}:FUNC?'.format(c=self._channel),
-                Stream(Mapping(self._functions_with_quotes))
+                Stream(Mapping(_sense_functions))
             )
         )
 
@@ -219,14 +227,14 @@ class Sense(Driver):
             value = (value,)
         Command(
             write=':SENS{c}:FUNC'.format(c=self._channel),
-            type_=Stream(Mapping(self._functions_with_quotes))
+            type_=Stream(Mapping(_sense_functions))
         ).write(self._transport, self._protocol, *value)
 
         for f in self.functions:
             if f not in value:
                 Command(
                     write=':SENS{c}:FUNC:OFF'.format(c=self._channel),
-                    type_=Stream(Mapping(self._functions_with_quotes))
+                    type_=Stream(Mapping(_sense_functions))
                 ).write(self._transport, self._protocol, f)
 
 
@@ -245,7 +253,7 @@ class SubSense(Driver):
     def __init__(self, transport, protocol, channel=1, function='VOLT', ulim=V_MAX):
         """
         :param channel: channel number. 1 or 2
-        :param function: sense function, 'volt', 'curr', or 'res'
+        :param function: sense function, 'VOLT', 'CURR', or 'RES'
         :param ulim: upper limit of sense values"""
         super(SubSense, self).__init__(transport, protocol)
         if function not in ('VOLT', 'CURR', 'RES'):
@@ -304,14 +312,12 @@ class SubSense(Driver):
 
 class Source(Driver):
     """The Source Command Subsystem.
-
         :ivar mode: Sets the source mode. available values: 'current', 'voltage'
         :ivar function_shape: Sets the source shape. available values: 'dc', 'pulse'
-        :ivar sweep_direction: Sets the source sweep direction. available values: 'up', 'down'
-        :ivar sweep_points: Sets the number of source sweep points. (min: 1, max: 2500)
-        :ivar sweep_range: Sets the source sweep range. available values: 'best', 'auto', 'fixed'
-        :ivar sweep_space: Sets the source sweep space. available values: 'linear', 'logarithmic'
-        :ivar sweep_mode: Sets the source sweep mode. available values: 'single', 'double'
+        :ivar voltage: The source voltage command subsystem.
+        :ivar current: The source current command subsystem.
+        :ivar sweep: The source sweep command subsystem.
+        :ivar list: The source list command subsystem.
     """
     _functions = _source_functions
 
@@ -331,50 +337,24 @@ class Source(Driver):
             ':SOUR{c}:FUNC:SHAPE',
             Mapping({'pulse': 'PULS', 'dc': 'DC'})
         )  # Model 2430 only
-        self.sweep_direction = _command(
-            m,
-            ':SOUR{c}:SWE:DIR?',
-            ':SOUR{c}:SWE:DIR',
-            Mapping({'up': 'UP', 'down': 'DOWN'})
-        )
-        self.sweep_points = _command(
-            m,
-            ':SOUR{c}:SWE:POIN?',
-            ':SOUR{c}:SWE:POIN',
-            Integer(2, 2500),
-        )
-        self.sweep_range = _command(
-            m,
-            ':SOUR{c}:SWE:RANG?',
-            ':SOUR{c}:SWE:RANG',
-            Mapping({'best': 'BEST', 'fixed': 'FIX', 'auto': 'AUTO'})
-        )
-        self.sweep_space = _command(
-            m,
-            ':SOUR{c}:SWE:SPAC?',
-            ':SOUR{c}:SWE:SPAC',
-            Mapping({'linear': 'LIN', 'logarithmic': 'LOG'})
-        )
-        self.sweep_mode = _command(
-            m,
-            ':SOUR{c}:SWE:STA?',
-            ':SOUR{c}:SWE:STA',
-            Mapping({'single': 'SING', 'double': 'DOUB'})
-        )
-
-        self.curr = self.current = SubSource(transport, protocol, channel, 'CURR', I_MAX)
-        self.volt = self.voltage = SubSource(transport, protocol, channel, 'VOLT', V_MAX)
+        self.sweep = SourceSweep(transport, protocol, channel)
+        self.list = SourceList(transport, protocol, channel)
+        self.current = SubSource(transport, protocol, channel, 'CURR', I_MAX)
+        self.voltage = SubSource(transport, protocol, channel, 'VOLT', V_MAX)
 
     def invert(self, functions=()):
         """Inverts source. Effective only when using fixed source"""
-        if not functions:
-            functions = 'curr', 'volt'
-        if 'curr' in functions:
-            self.curr.level *= -1
-            self.curr.level_triggered *= -1
-        if 'volt' in functions:
-            self.volt.level *= -1
-            self.volt.level_triggered *= -1
+        if isinstance(functions, str):
+            functions = (functions,)
+        for f in functions:
+            if f.lower().startswith('curr'):
+                self.current.level_triggered *= -1
+                self.current.level *= -1
+            elif f.lower().startswith('volt'):
+                self.voltage.level_triggered *= -1
+                self.voltage.level *= -1
+            else:
+                raise ValueError('Unknown function: %s' % f)
 
     @property
     def functions(self):
@@ -382,35 +362,145 @@ class Source(Driver):
         return list(self._functions)
 
 
+class SourceSweep(Driver):
+    """The sweep command subsystem of the Source node.
+
+    :ivar direction: Sweep from start to stop ('up') or from stop to start ('down')
+    :ivar spacing: The sweep type, valid are 'linear', 'log' and 'list'.
+    :ivar int points: The number of sweep points in the range 1 to 65535.
+    :ivar ranging: The sweep ranging, valid are 'auto', 'best' and 'fixed'.
+    """
+    def __init__(self, transport, protocol, channel):
+        super(SourceSweep, self).__init__(transport, protocol)
+        self._channel = channel
+        m = {'c': self._channel}
+        self.direction = _command(
+            m,
+            ':SOUR{c}:SWE:DIR?',
+            ':SOUR{c}:SWE:DIR',
+            Mapping({'up': 'UP', 'down': 'DOWN'})
+        )
+        self.points = _command(
+            m,
+            ':SOUR{c}:SWE:POIN?',
+            ':SOUR{c}:SWE:POIN',
+            Integer(2, 2500),
+        )
+        self.ranging = _command(
+            m,
+            ':SOUR{c}:SWE:RANG?',
+            ':SOUR{c}:SWE:RANG',
+            Mapping({'best': 'BEST', 'fixed': 'FIX', 'auto': 'AUTO'})
+        )
+        self.spacing = _command(
+            m,
+            ':SOUR{c}:SWE:SPAC?',
+            ':SOUR{c}:SWE:SPAC',
+            Mapping({'linear': 'LIN', 'logarithmic': 'LOG'})
+        )
+
+
+class SourceList(Driver):
+    """The list command subsystem of the Source node.
+
+    It is used to define arbitrary current/voltage. E.g. writing a
+    current sequence is as simple as::
+
+        >>> k2400.source.list.current[:] = [-0.01, -0.02, 0.0]
+        >>> len(k2400.source.list.current)
+        3
+
+    To extend the list, a special member function is provided::
+
+        >>> k2400.source.list.current.extend([0.01, 0.0, 0.0])
+        >>> k2400.source.list.current[:]
+        [-0.01, -0.02, 0.0, 0.01, 0.0, 0.0]
+
+    Slicing notation can also be used to manipulate the sequence::
+
+        >>> k2400.source.list.current[::2] = [-0.03, 0.05, 0.07]
+        >>> k2400.source.list.current[:]
+        [-0.03, -0.02, 0.05, 0.01, 0.07, 0.0]
+
+    :ivar current: An instance of :class:`~.SourceListSequence`, giving access
+        to the current subsystem.
+    :ivar voltage: An instance of :class:'~.SourceListSequence', giving access
+        to he voltage subsystem.
+    """
+    def __init__(self, transport, protocol, channel=1):
+        super(SourceList, self).__init__(transport, protocol)
+        self.current = SourceListSequence(
+            transport,
+            protocol,
+            node='CURR',
+            type=Float(min=-I_MAX, max=I_MAX),
+            channel=channel,
+        )
+        self.voltage = SourceListSequence(
+            transport,
+            protocol,
+            node='VOLT',
+            type=Float(min=-V_MAX, max=V_MAX),
+            channel=channel,
+        )
+
+
+class SourceListSequence(Driver):
+    def __init__(self, transport, protocol, node, type, channel=1):
+        super(SourceListSequence, self).__init__(transport, protocol)
+        self._channel = channel
+        self._node = node
+        m = {'c': self._channel, 'node': self._node}
+        self._extend = _command(
+            m,
+            write=':SOUR{c}:LIST:{node}:APPEND',
+        )
+        self._sequence = _command(
+            m,
+            ':SOUR{c}:LIST:{node}?',
+            ':SOUR{c}:LIST:{node}',
+            itertools.repeat(type)
+        )
+
+    def extend(self, iterable):
+        """Extends the list."""
+        self._extend = iterable
+
+    def __getitem__(self, item):
+        return self._sequence[item]
+
+    def __setitem__(self, item, value):
+        seq = self._sequence
+        seq[item] = value
+        self._sequence = seq
+
+    def __len__(self):
+        return self._query((':SOUR:LIST:{}:POIN?'.format(self._node), Integer))
+
+
 class SubSource(Driver):
     """
-
-    :ivar level: Sets & gets level. This is applied when the output is on.
-    :ivar level_triggered: Sets & gets level when triggered. This is applied e.g. when initiate() is called.
+    :ivar float level: Sets & gets level. This is applied when the output is on.
+    :ivar float level_triggered: Sets & gets level when triggered. This is applied e.g. when initiate() is called.
+    :ivar float range: The current range in ampere. [-105e-3, 105e3].
+    :ivar bool auto_range: A boolean flag to enable/disable auto ranging.
+    :ivar float start: The start current.
+    :ivar float step: The step current.
+    :ivar float stop: The stop current.
+    :ivar float center: The center current.
+    :ivar float span: The span current.
     :ivar mode: source mode. 'sweep', 'list', or 'fixed'
     :ivar tuple auto_range_limit: limits of source range for automatic range determination
     """
-    def __init__(self, transport, protocol, channel, function='VOLT', ulim=V_MAX):
-        super().__init__(transport, protocol)
+    def __init__(self, transport, protocol, channel=1, function='VOLT', ulim=V_MAX):
+        super(SubSource, self).__init__(transport, protocol)
         self._channel = channel
         self._function = function
         self._ulim = ulim
 
         m = {'c': self._channel, 'f': self._function}
 
-        self.center = _command(
-            m,
-            ':SOUR{c}:{f}:CENT?',
-            ':SOUR{c}:{f}:CENT',
-            Float(-ulim, ulim)
-        )
-        self.span = _command(
-            m,
-            ':SOUR{c}:{f}:SPAN?',
-            ':SOUR{c}:{f}:SPAN',
-            Float(-ulim, ulim)
-        )
-        self.level = _command(
+        self.level = self.amplitude = _command(
             m,
             ':SOUR{c}:{f}:LEV?',
             ':SOUR{c}:{f}:LEV',
@@ -428,7 +518,6 @@ class SubSource(Driver):
             ':SOUR{c}:{f}:MODE',
             Mapping({'sweep': 'SWE', 'list': 'LIST', 'fixed': 'FIX'})
         )
-
         self.range = _command(
             m,
             ':SOUR{c}:{f}:RANG?',
@@ -441,33 +530,39 @@ class SubSource(Driver):
             ':SOUR{c}:{f}:RANG:AUTO',
             Boolean
         )
-        self.auto_range_limit = _command(
-            m,
-            ':SOUR{c}:{f}:RANG:AUTO:LLIM?',
-            ':SOUR{c}:{f}:RANG:AUTO:LLIM',
-            Float(-ulim, ulim)
-        )
 
         # for sweep modes
-        self.points = _command(
+        self.center = self.sweep_center = _command(
+            m,
+            ':SOUR{c}:{f}:CENT?',
+            ':SOUR{c}:{f}:CENT',
+            Float(-ulim, ulim)
+        )
+        self.span = self.sweep_span = _command(
+            m,
+            ':SOUR{c}:{f}:SPAN?',
+            ':SOUR{c}:{f}:SPAN',
+            Float(-ulim, ulim)
+        )
+        self.points = self.sweep_points = _command(
             m,
             ':SOUR{c}:POIN?',
             ':SOUR{c}:POIN',
             Integer(1, 2500)
         )
-        self.step = _command(
+        self.step = self.sweep_step = _command(
             m,
             ':SOUR{c}:{f}:STEP?',
             ':SOUR{c}:{f}:STEP',
             Float(min=0)
         )
-        self.sweep_start = _command(
+        self.start = self.sweep_start = _command(
             m,
             ':SOUR{c}:{f}:STAR?',
             ':SOUR{c}:{f}:STAR',
             Float(-ulim, ulim)
         )
-        self.sweep_stop = _command(
+        self.stop = self.sweep_stop = _command(
             m,
             ':SOUR{c}:{f}:STOP?',
             ':SOUR{c}:{f}:STOP',
@@ -475,11 +570,11 @@ class SubSource(Driver):
         )
 
         # for list mode
-        self.list = _command(
-            m,
-            ':SOUR{c}:LIST:{f}?',
-            ':SOUR{c}:LIST:{f}',
-            Stream(Float(-ulim, ulim))
+        self.list = SourceListSequence(
+            transport, protocol,
+            node=function,
+            type=Float(-ulim, ulim),
+            channel=channel
         )
 
 # -----------------------------------------------------------------------------
@@ -488,11 +583,11 @@ class SubSource(Driver):
 
 
 class Format(Driver):
-    _functions = _sense_functions
-
     def __init__(self, transport, protocol):
-        super().__init__(transport, protocol)
-        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions)))
+        super(Format, self).__init__(transport, protocol)
+        self.elements = self.sense_elements = Command(
+            ':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(_format_elements))
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -516,7 +611,7 @@ class Output(Driver):
         'guard': source I, I=0, compliance 0.5%
     """
     def __init__(self, transport, protocol, channel=1):
-        super().__init__(transport, protocol)
+        super(Output, self).__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
         self.state = _command(m, ':OUTP{c}?', 'OUTP{c}', Boolean)
@@ -543,7 +638,7 @@ class Trace(Driver):
     :ivar free: the available size (available) and the total size (total) of the trace buffer.
     :ivar points: the size of the trace buffer"""
     def __init__(self, transport, protocol, channel=1):
-        super().__init__(transport, protocol)
+        super(Trace, self).__init__(transport, protocol)
         self._channel = channel
         m = {'c': self._channel}
         self.free = _command(m, ':TRAC{c}:FREE?', ':TRAC{c}:FREE', [Integer, Integer])
@@ -591,17 +686,16 @@ class Setup(object):
         :param value: source value
         :param channel: SMU channel, default is 1
         """
-        if function not in ('volt',  'voltage', 'curr', 'current'):
+        source = self._smu.sources[channel - 1]  # type: Source
+        if function.lower().startswith('volt'):
+            sub = source.voltage
+        elif function.lower().startswith('curr'):
+            sub = source.current
+        else:
             raise ValueError("Invalid function: %r" % function)
-        source = self._smu.sources[channel-1]
 
         self.triggering(count=1, channel=channel)
         source.function_mode = function
-        if function[:4] == 'volt':
-            sub = source.voltage
-        elif function[:4] == 'curr':
-            sub = source.current
-
         sub.mode = 'fixed'
         if value is not None:
             sub.level = value
@@ -609,68 +703,71 @@ class Setup(object):
 
     def fixed_source_with_compensation(self, function, value, channel=1):
         """ Sets up offset compensation by source inversion. ALso sets trigger count 2."""
-        trig = self._smu.triggerings[channel - 1]
-        source = self._smu.sources[channel - 1]
+        trig = self._smu.triggerings[channel - 1]  # type: Triggering
+        source = self._smu.sources[channel - 1]  # type: Source
         source.function_mode = function
         trig.count = 2
         if function == 'volt':
-            source.volt.mode = 'list'
-            source.volt.list = (value, -value)
+            source.voltage.mode = 'list'
+            source.voltage.list = (value, -value)
         elif function == 'curr':
-            source.curr.mode = 'list'
-            source.curr.list = (value, -value)
+            source.current.mode = 'list'
+            source.current.list = (value, -value)
 
     def sweep_source(self, function, start, stop, points, channel=1):
         """Switch function mode and setup for sweep measurement
 
-        :param function: source function, 'volt(age)' or 'curr(ent)'
-        :param start: initial source value
-        :param stop: final source value
-        :param points: number of sweep points
-        :param channel: SMU channel, '', 1, or 2.
+        :param str function: source function, 'volt(age)' or 'curr(ent)'
+        :param float start: initial source value
+        :param float stop: final source value
+        :param int points: number of sweep points
+        :param int channel: SMU channel, 1 or 2.
         """
-        source = self._smu.sources[channel-1]
-        if function[:4] == 'volt':
-            sub = source.volt
-        elif function[:4] == 'curr':
-            sub = source.curr
+        source = self._smu.sources[channel-1]  # type: Source
+
+        if function.lower().startswith('volt'):
+            sub = source.voltage
+        elif function.lower().startswith('curr'):
+            sub = source.current
         else:
             raise ValueError('Invalid function: %r' % function)
 
         self.triggering(count=points, channel=channel)
         source.function_mode = function
-        source.sweep_points = points
 
         sub.mode = 'sweep'
         sub.sweep_start = start
         sub.sweep_stop = stop
+        sub.sweep_points = points
 
-    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None, channel=1,
-              four_wire=None, integration_time=None):
+    def sense(self, function, auto_range=None, range_=None, nplc=None, compliance=None,
+              four_wire=None, integration_time=None,
+              channel=1):
         """Sets up voltage or current sense parameters.
 
         ..note: four wire settings apply both modes. to avoid confusion, this function does not support them.
 
-        :param function: 'volt' or 'curr'
-        :param auto_range: bool
-        :param range_: upper limit of the sense range
-        :param nplc: number of power line cycles (integration time in (1/50) seconds)
-        :param compliance: sense compliance
-        :param channel: SMU channel, 1, or 2.
-        :param four_wire: activate or deactivate four_wire sensing
-        :param integration_time: integration time in seconds
+        :param str function: 'voltage' or 'current'
+        :param bool auto_range: enables or disables auto ranging
+        :param float range_: upper limit of the sense range
+        :param float nplc: number of power line cycles (integration time in (1/50) seconds)
+        :param float compliance: sense compliance
+        :param bool four_wire: activate or deactivate four_wire sensing
+        :param float integration_time: integration time in seconds
+        :param int channel: SMU channel, 1, or 2 (not used for K2400)
         """
-        sense = self._smu.senses[channel-1]
-        if auto_range and range_:
+        if auto_range and (range_ is not None):
             raise ValueError('Cannot enable auto_range and set range at the same time.')
-        if function[:4] == 'volt':
+        if (nplc is not None) and (integration_time is not None):
+            raise ValueError('"nplc" and "integration_time" are mutually exclusive.')
+
+        sense = self._smu.senses[channel-1]  # type: Sense
+        if function.lower().startswith('volt'):
             sub = sense.voltage
-        elif function[:4] == 'curr':
+        elif function.lower().startswith('curr'):
             sub = sense.current
         else:
             raise ValueError('Invalid function: %r' % function)
-        if nplc is not None and integration_time is not None:
-            raise ValueError('"nplc" and "integration_time" are mutually exclusive.')
 
         if four_wire is not None:
             sense.four_wire = four_wire
@@ -681,7 +778,7 @@ class Setup(object):
         if nplc is not None:
             sub.nplc = nplc
         if integration_time is not None:
-            sub.nplc = integration_time / 50
+            sub.nplc = integration_time * 50
         if compliance is not None:
             sub.compliance = compliance
 
@@ -690,22 +787,21 @@ class Setup(object):
         :param enable: None, True, or False
         :param mode: None, 'auto' or 'manual'
         :param channel: 1 or 2"""
-        sense = self._smu.senses[channel - 1]
+        sense = self._smu.senses[channel - 1]  # type: Sense
         if enable is None:
             pass
         elif enable:
-            sense.functions = tuple(set(list(sense.functions) + ['resistance']))  # 'res'を付け足して、重複を削除
+            sense.enable('resistance')
         else:
-            sense.functions = tuple(f for f in sense.functions if f != 'resistance')
+            sense.disable('resistance')
         if mode:
-            sense.res.mode = mode
+            sense.resistance.mode = mode
 
 
 class K2400(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     is_dual = False
-    _functions = _sense_functions
 
-    def __init__(self, transport: Transport):
+    def __init__(self, transport):
         super(K2400, self).__init__(transport)
 
         ch = (1,)
@@ -739,7 +835,7 @@ class K2400(iec.IEC60488, iec.Trigger, iec.StoredSetting):
         self.format = Format(self._transport, self._protocol)
         self.setup = Setup(self)
 
-        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(self._functions)))
+        self.sense_elements = Command(':FORM:ELEM:SENS?', ':FORM:ELEM:SENS', Stream(Mapping(_format_elements)))
 
     def beep(self, freq=200, duration=1):
         self._write(":SYST:BEEP:STAT ON")
@@ -766,20 +862,3 @@ class K2400(iec.IEC60488, iec.Trigger, iec.StoredSetting):
     def abort(self):
         """aborts selected channels."""
         self._write(':ABOR')
-
-    def __check__(self):
-        """if isinstance(self._transport, SimulatedTransport):
-            return
-        maker, model, serial, revision = self.identification
-        # Valid IDN: Agilent Technologies,model,serial,revision
-        if not re.fullmatch(r'B29[0-9][0-9][A-Z]?', model):
-            raise ValueError("Unknown model: '{0}'".format(model))
-        lang = self._query((':SYST:LANG?', String))
-        if lang != '"DEF"':
-            raise ValueError("Change Language mode to DEF from System -> Language")
-
-        if model.strip().upper() in ('B2902A', 'B2912A', 'B2962A'):
-            self.is_dual = True
-        else:
-            self.is_dual = False"""
-        return
