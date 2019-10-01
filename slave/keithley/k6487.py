@@ -21,6 +21,48 @@ _data_elements = {
     'default': 'DEF',
     'all': 'ALL'
 }
+_calc3_format = {
+    'mean': 'MEAN',
+    'sdeviation': 'SDEV',
+    'maximum': 'MAX',
+    'minimum': 'MIN',
+    'PKPK': 'PKPK'
+}
+
+
+class Calculate(Driver):
+    """The Calculate command layer"""
+    def __init__(self, transport, protocol):
+        super(Calculate, self).__init__(transport, protocol)
+        self._transport = transport
+        self._protocol = protocol
+
+        self.calculate1 = Calculate1(self._transport, self._protocol)
+        self.calculate2 = Calculate2(self._transport, self._protocol)
+        self.calculate3 = Calculate3(self._transport, self._protocol)
+
+
+class Calculate1(Driver):
+    def __init__(self, transport, protocol):
+        super(Calculate1, self).__init__(transport, protocol)
+
+
+class Calculate2(Driver):
+    def __init__(self, transport, protocol):
+        super(Calculate2, self).__init__(transport, protocol)
+
+
+class Calculate3(Driver):
+    def __init__(self, transport, protocol):
+        super(Calculate3, self).__init__(transport, protocol)
+        self.format = Command(
+            'CALC3:FORM?',
+            'CALC3:FORM',
+            Mapping(_calc3_format)
+        )
+
+    def get_data(self):
+        return self._query(('CALC3:DATA?', Stream(Float)))
 
 
 class Display(Driver):
@@ -33,19 +75,24 @@ class Display(Driver):
 
     def __init__(self, transport, protocol):
         super(Display, self).__init__(transport, protocol)
+        self.degits = Command(
+            'DISP:DIG?',
+            'DISP:DIG',
+            Integer(4, 7)
+        )
         self.enable = Command(
             'DISP:ENAB?',
             'DISP:ENAB',
             Boolean
         )
         self.data = Command(
-            'DISP:TEXT:DATA?',
-            'DISP:TEXT:DATA',
+            'DISP:TEXT?',
+            'DISP:TEXT',
             String(0, 12)
         )
         self.state = Command(
-            'DISP:WIND:TEXT:STAT?',
-            'DISP:WIND:TEXT:STAT',
+            'DISP:TEXT:STAT?',
+            'DISP:TEXT:STAT',
             Boolean
         )
 
@@ -93,6 +140,118 @@ class Arm(Driver):
             ':ARM:TIM',
             Float(0.001, 99999.999)
         )
+
+
+class Format(Driver):
+    """The Format command layer.
+
+        :param transport: A transport object.
+
+        :param protocol: A protocol object.
+    """
+    def __init__(self, transport, protocol):
+        super(Format, self).__init__(transport, protocol)
+
+        self.data = Command(
+            'FORM?',
+            'FORM',
+            Mapping({
+                'ascii': 'ASC',
+                'real': 'REAL',
+                '32': '32',
+                'sreal': 'SRE'
+            })
+        )
+        self.elements = Command(
+            'FORM:ELEM?',
+            'FORM:ELEM',
+            Stream(Mapping(_data_elements))
+        )
+        self.border = Command(
+            'FORM:BORD?',
+            'FORM:BORD',
+            Mapping({'normal': 'NORM', 'swapped': 'SWAP'})
+        )
+        self.register = Command(
+            'FORM:SREG?',
+            'FORM:SREG',
+            Mapping({'ascii': 'ASC', 'hexadecimal': 'HEX', 'octal': 'OCT', 'binary': 'BIN'})
+        )
+        self.soruce2 = Command(
+            'FORM:SREG?',
+            'FORM:SREG',
+            Mapping({'ascii': 'ASC', 'hexadecimal': 'HEX', 'octal': 'OCT', 'binary': 'BIN'})
+        )
+
+
+class System(Driver):
+    def __init__(self, transport, protocol):
+        super(System, self).__init__(transport, protocol)
+        self._transport = transport
+        self._protocol = protocol
+
+        self.zero_check = SystemZeroCheck(self._transport, self._protocol)
+        self.zero_correct = SystemZeroCorrect(self._transport, self._protocol)
+
+        self.power_line_frequency = Command(
+            'SYST:LFR?',
+            'SYST:LFR',
+            Mapping({'50': 50, '60': 60})
+        )
+        self.auto_power_line_frequency = Command(
+            'SYST:LFR:AUTO?',
+            'SYST:LFR:AUTO',
+            Boolean
+        )
+        self.autozero = Command(
+            'SYST:AZER?',
+            'SYST:AZER',
+            Boolean
+        )
+
+    def preset(self):
+        self._write('SYST:PRES')
+
+    def reset_timestamp(self):
+        self._write('SYST:TIME:RES')
+
+    def error_oldest(self, code_only=False):
+        if code_only:
+            self._write('SYST:ERR:CODE?')
+        else:
+            self._write('SYST:ERR?')
+
+    def error_all(self, code_only=False):
+        if code_only:
+            self._write('SYST:ERR:CODE:ALL?')
+        else:
+            self._write('SYST:ERR:ALL?')
+
+    def error_count(self):
+        self._write('SYST:ERR:COUN?')
+
+
+class SystemZeroCheck(Driver):
+    def __init__(self, transport, protocol):
+        super(SystemZeroCheck, self).__init__(transport, protocol)
+        self.enable = Command(
+            'SYST:ZCH:STAT?',
+            'SYST:ZCH:STAT',
+            Boolean
+        )
+
+
+class SystemZeroCorrect(Driver):
+    def __init__(self, transport, protocol):
+        super(SystemZeroCorrect, self).__init__(transport, protocol)
+        self.enable = Command(
+            'SYST:ZCOR:STAT?',
+            'SYST:ZCOR:STAT',
+            Boolean
+        )
+
+    def acquire(self):
+        self._write('SYST:ZCOR:ACQ')
 
 
 class Trigger(Driver):
@@ -188,33 +347,6 @@ class Sense(Driver):
         return self._query((':DATA?', Stream(Float)))
 
 
-class Format(Driver):
-    """The Format command layer.
-
-        :param transport: A transport object.
-
-        :param protocol: A protocol object.
-    """
-    def __init__(self, transport, protocol):
-        super(Format, self).__init__(transport, protocol)
-
-        self.data = Command(
-            'FORM?',
-            'FORM',
-            Mapping({
-                'ascii': 'ASC',
-                'real': 'REAL',
-                '32': '32',
-                'sreal': 'SRE'
-            })
-        )
-        self.elements = Command(
-            'FORM:ELEM?',
-            'FORM:ELEM',
-            Stream(Mapping(_data_elements))
-        )
-
-
 class Trace(Driver):
     """TRACe subsystem. Used to configure and control data storage into buffer.
 
@@ -255,39 +387,6 @@ class Trace(Driver):
 
     def clear(self):
         self._write(':TRACe:CLEar')
-
-
-class System(Driver):
-    def __init__(self, transport, protocol):
-        super(System, self).__init__(transport, protocol)
-        self._transport = transport
-        self._protocol = protocol
-
-        self.zero_check = SystemZeroCheck(self._transport, self._protocol)
-        self.zero_correct = SystemZeroCorrect(self._transport, self._protocol)
-
-
-class SystemZeroCheck(Driver):
-    def __init__(self, transport, protocol):
-        super(SystemZeroCheck, self).__init__(transport, protocol)
-        self.enable = Command(
-            'SYST:ZCH:STAT?',
-            'SYST:ZCH:STAT',
-            Boolean
-        )
-
-
-class SystemZeroCorrect(Driver):
-    def __init__(self, transport, protocol):
-        super(SystemZeroCorrect, self).__init__(transport, protocol)
-        self.enable = Command(
-            'SYST:ZCOR:STAT?',
-            'SYST:ZCOR:STAT',
-            Boolean
-        )
-
-    def acquire(self):
-        self._write('SYST:ZCOR:ACQ')
 
 
 class K6487(iec.IEC60488, iec.Trigger, iec.StoredSetting):
