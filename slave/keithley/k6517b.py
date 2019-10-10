@@ -63,6 +63,32 @@ class Calculate(Driver):
                      'pdeviation': 'PDEV',
                      'log10': 'LOG'})
         )
+        self.math_a0 = Command(
+            ':CALC:KMAT:MA0F?',
+            ':CALC:KMAT:MA0F',
+            Float(-9.999999e30, 9.999999e30)
+        )
+        self.math_a1 = Command(
+            ':CALC:KMAT:MA1F?',
+            ':CALC:KMAT:MA1F',
+            Float(-9.999999e20, 9.999999e20)
+        )
+        self.math_a2 = Command(
+            ':CALC:KMAT:MA2F?',
+            ':CALC:KMAT:MA2F',
+            Float(-9.999999e20, 9.999999e20)
+        )
+        self.math_percent = Command(
+            ':CALC:KMAT:PERC?',
+            ':CALC:KMAT:PERC',
+            Float(-9.999999e35, 9.999999e35)
+        )
+
+        self.reference = Command(
+            ':CALC:REF?',
+            ':CALC:REF',
+            Float(-9.999999e35, 9.999999e35)
+        )
         self.state = Command(
             ':CALC:STAT?',
             ':CALC:STAT',
@@ -107,14 +133,135 @@ class Calculate2(Driver):
 
 
 class Calculate3(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Calculate3, self).__init__(transport, protocol)
+        self._transport = transport
+        self._protocol = protocol
+
+        self.limit1 = Limit(self._transport, self._protocol, 1)
+        self.limit2 = Limit(self._transport, self._protocol, 2)
+
+        self.output_patter = Command(
+            ':CALC3:PASS:SOUR?',
+            ':CALC3:PASS:SOUR',
+            Integer(0, 15)
+        )
+        self.test_result = Command(
+            ':CALC3:CLIM:FAIL?',
+            ':CALC3:CLIM:FAIL',
+            Boolean
+        )
+        self.binning_strobe = Command(
+            ':CALC3:BSTR:STAT?',
+            ':CALC3:BSTR:STAT',
+            Boolean
+        )
+
+    def recalculate(self):
+        return self._write(':CALC3:IMM')
+
+
+class Limit(Driver):
+    def __init__(self, transport, protocol, limit):
+        super(Limit, self).__init__(transport, protocol)
+        self._limit = limit
+
+        self.ulim = Command(
+            ':CALC3:LIM%d:UPP?' % self._limit,
+            ':CALC3:LIM%d:UPP' % self._limit,
+            Float(-9.999999e35, 9.999999e35)
+        )
+        self.ulim_failure_pattern = Command(
+            ':CALC3:LIM%d:UPP:SOUR?' % self._limit,
+            ':CALC3:LIM%d:UPP:SOUR' % self._limit,
+            Integer(0, 15)
+        )
+        self.llim = Command(
+            ':CALC3:LIM%d:LOW?' % self._limit,
+            ':CALC3:LIM%d:LOW' % self._limit,
+            Float(-9.999999e35, 9.999999e35)
+        )
+        self.llim_failure_pattern = Command(
+            ':CALC3:LIM%d:LOW:SOUR?' % self._limit,
+            ':CALC3:LIM%d:LOW:SOUR' % self._limit,
+            Integer(0, 15)
+        )
+        self.state = Command(
+            ':CALC3:LIM%d:STAT?' % self._limit,
+            ':CALC3:LIM%d:STAT' % self._limit,
+            Boolean
+        )
+        self.result = Command(
+            ':CALC3:LIM%d:FAIL?' % self._limit,
+            ':CALC3:LIM%d:FAIL' % self._limit,
+            Boolean
+        )
+        self.auto_clear = Command(
+            ':CALC3:LIM%d:CLE:AUTO?' % self._limit,
+            ':CALC3:LIM%d:CLE:AUTO' % self._limit,
+            Boolean
+        )
+
+    def clear(self):
+        return self._write(':CALC3:LIM%d:CLE') % self._limit
 
 
 class Display(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Display, self).__init__(transport, protocol)
+        self._transport = transport
+        self._protocol = protocol
+
+        self.window1 = Window(self._transport, self._protocol, 1)
+        self.window2 = Window(self._transport, self._protocol, 2)
+
+        self.resistance_nplc = Command(
+            ':RES:NPLC?',
+            ':RES:NPLC',
+            Stream(String)
+        )
+        self.status_message = Command(
+            ':DISP:SMES?',
+            ':DISP:SMES',
+            Boolean
+        )
+        self.enable = Command(
+            ':DISP:ENAB?',
+            ':DISP:ENAB',
+            Boolean
+        )
+
+    def clear_next_display(self):
+        return self._write(':DISP:CND')
+
+
+class Window(Driver):
+    def __init__(self, transport, protocol, window):
+        super(Window, self).__init__(transport, protocol)
+        self._window = window
+
+        self.data = Command(
+            ':DISP:WIND%d:TEXT:DATA?' % self._window,
+            ':DISP:WIND%d:TEXT:DATA' % self._window,
+            String
+        )
+        self.state = Command(
+            ':DISP:WIND%d:TEXT:STAT?' % self._window,
+            ':DISP:WIND%d:TEXT:STAT' % self._window,
+            Boolean
+        )
+        self.attribute = Command(
+            ':DISP:WIND%d:TEXT:ATTR?' % self._window,
+            ':DISP:WIND%d:TEXT:ATTR' % self._window,
+            Boolean
+        )
 
 
 class Format(Driver):
+    """
+    [reading][status][units][timestamp][reading number][units]
+    [external temperature][units][relative humidity][units][V-source][units]
+    """
     def __init__(self, transport, protocol):
         super(Format, self).__init__(transport, protocol)
 
@@ -133,13 +280,13 @@ class Format(Driver):
             Stream(Mapping({
                 'reading': 'READ',
                 'channel': 'CHAN',
-                'rnumber': 'RNUM',
+                'reading number': 'RNUM',
                 'units': 'UNIT',
                 'timestamp': 'TST',
                 'status': 'STAT',
-                'etemperature': 'ETEM',
+                'external temperature': 'ETEM',
                 'humidity': 'HUM',
-                'vsource': 'VSO'
+                'V-source': 'VSO'
             }))
         )
         self.byte_order = Command(
@@ -150,11 +297,92 @@ class Format(Driver):
 
 
 class Output(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Output, self).__init__(transport, protocol)
+
+        self.state = Command(
+            ':OUTP1:STAT?',
+            ':OUTP1:STAT',
+            Boolean
+        )
+        self.polarity_l1 = Command(
+            ':OUTP2:TTL1:LSEN?',
+            ':OUTP2:TTL1:LSEN',
+            Mapping({'high': 'AHIG', 'low': 'ALOW'})
+        )
+        self.polarity_l2 = Command(
+            ':OUTP2:TTL2:LSEN?',
+            ':OUTP2:TTL2:LSEN',
+            Mapping({'high': 'AHIG', 'low': 'ALOW'})
+        )
+        self.polarity_l3 = Command(
+            ':OUTP2:TTL3:LSEN?',
+            ':OUTP2:TTL3:LSEN',
+            Mapping({'high': 'AHIG', 'low': 'ALOW'})
+        )
+        self.polarity_l4 = Command(
+            ':OUTP2:TTL4:LSEN?',
+            ':OUTP2:TTL4:LSEN',
+            Mapping({'high': 'AHIG', 'low': 'ALOW'})
+        )
 
 
 class Route(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Route, self).__init__(transport, protocol)
+
+        # TODO: list type (@ list)
+        self.closed_channel = Command(
+            query=':ROUT:CLOS:STAT?',
+            type_=String
+        )
+
+        self.external_channels = Command(
+            ':ROUT:SCA:EXT?',
+            ':ROUT:SCA:EXT',
+            Integer(1, 400)
+        )
+        self.scan_operation = Command(
+            ':ROUT:SCAN:LSEL?',
+            ':ROUT:SCAN:LSEL',
+            Mapping({'internal': 'INT', 'external': 'EXT', 'none': 'NONE'})
+        )
+        self.scan_time = Command(
+            ':ROUT:SCAN:STIM?',
+            ':ROUT:SCAN:STIM?',
+            Float(0.003, 99999.999)
+        )
+        self.scan_switch_method = Command(
+            ':ROUT:SCAN:SMET?',
+            ':ROUT:SCAN:SMET',
+            Mapping({'break-before-make': 'VOLT', 'normal': 'CURR'})
+        )
+        self.vsource_limit = Command(
+            ':ROUT:SCAN:VSL?',
+            ':ROUT:SCAN:VSL',
+            Boolean
+        )
+
+    def close(self, chanlist):
+        return self._write(':ROUT:CLOS %s') % '@ ' + ','.join(chanlist)
+
+    def is_close(self, chanlist):
+        return self._query(':ROUT:CLOS? %s') % '@ ' + ','.join(chanlist)
+
+    def open(self, chanlist):
+        return self._write(':ROUT:OPEN %s') % '@ ' + ','.join(chanlist)
+
+    def is_open(self, chanlist):
+        return self._query(':ROUT:OPEN? %s') % '@ ' + ','.join(chanlist)
+
+    def open_all(self):
+        return self._write(':ROUT:OPEN:ALL')
+
+    def scan(self, scanlist):
+        return self._write(':ROUT:SCAN %s') % '@ ' + ','.join(scanlist)
+
+    def is_scan(self, scanlist):
+        return self._query(':ROUT:SCAN? %s') % '@ ' + ','.join(scanlist)
 
 
 class Sense(Driver):
@@ -321,13 +549,23 @@ class Median(Driver):
 
 
 class Voltage(SubSense):
-    def __init__(self, transport, protocol, function):
-        super(Voltage, self).__init__(transport, protocol, 'voltage', 210)
+    def __init__(self, transport, protocol):
+        super(Voltage, self).__init__(transport, protocol, 'Voltage', 210)
+        self.guard = Command(
+            ':%s:GUAR?' % self._function,
+            ':%s:GUAR' % self._function,
+            Boolean
+        )
+        self.external_feedback = Command(
+            ':%s:XFE?' % self._function,
+            ':%s:XFE' % self._function,
+            Boolean
+        )
 
 
 class Current(SubSense):
     def __init__(self, transport, protocol):
-        super(Current, self).__init__(transport, protocol, 'current', 20e-3)
+        super(Current, self).__init__(transport, protocol, 'Amps', 20e-3)
         self.dumping = Command(
             ':%s:DAMP?' % self._function,
             ':%s:DAMP' % self._function,
@@ -337,20 +575,196 @@ class Current(SubSense):
 
 class Resistance(SubSense):
     def __init__(self, transport, protocol):
-        super(Resistance, self).__init__(transport, protocol, 'resistance', 2e6)
+        super(Resistance, self).__init__(transport, protocol, 'Ohms', 2e6)
+        self.dumping = Command(
+            ':%s:DAMP?' % self._function,
+            ':%s:DAMP' % self._function,
+            Boolean
+        )
+        self.vsource_mode = Command(
+            ':%s:VSC?' % self._function,
+            ':%s:VSC' % self._function,
+            Mapping({'manual': 'MAN', 'auto': 'AUTO'})
+        )
+        self.type = Command(
+            ':%s:MSEL?' % self._function,
+            ':%s:MSEL' % self._function,
+            Mapping({'normal': 'NORM', 'resistivity': 'RES'})
+        )
+        self.test_fixture = Command(
+            ':%s:RES:FSE?' % self._function,
+            ':%s:RES:FSE' % self._function,
+            Mapping({'M8009': 'M8009', 'user-supplied': 'USER'})
+        )
+        self.sample_thickness = Command(
+            ':%s:RES:STH?' % self._function,
+            ':%s:RES:STH' % self._function,
+            Float(0.0001, 99.9999)
+        )
+        self.m8009_setting = Command(
+            query=':%s:RES:M8009:RSW?' % self._function,
+            type_=Stream(String)
+        )
+        self.user_test_fixture = Command(
+            ':%s:RES:USER:RSE?' % self._function,
+            ':%s:RES:USER:RSE' % self._function,
+            Mapping({'surface': 'SURF', 'volumn': 'VOL'})
+        )
+        self.user_ks = Command(
+            ':%s:RES:USER:KSUR?' % self._function,
+            ':%s:RES:USER:KSUR' % self._function,
+            Float(0.001, 999.999)
+        )
+        self.user_kv = Command(
+            ':%s:RES:USER:KVOL?' % self._function,
+            ':%s:RES:USER:KVOL' % self._function,
+            Float(0.001, 999.999)
+        )
 
 
 class Coulombs(SubSense):
     def __init__(self, transport, protocol):
-        super(Coulombs, self).__init__(transport, protocol, 'coulombs', 2.1e-6)
+        super(Coulombs, self).__init__(transport, protocol, 'Coulombs', 2.1e-6)
+        self.auto_discharge = Command(
+            ':%s:ADIS?' % self._function,
+            ':%s:ADIS' % self._function,
+            Boolean
+        )
+        self.auto_discharge_level = Command(
+            ':%s:ADIS:LEV?' % self._function,
+            ':%s:ADIS:LEV' % self._function,
+            Float(-2.2e6, 2.2e6)
+        )
 
 
 class Source(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Source, self).__init__(transport, protocol)
+
+        self.output_line1 = Command(
+            ':SOUR:TTL?',
+            ':SOUR:TTL',
+            Boolean
+        )
+        self.output_line2 = Command(
+            ':SOUR:TTL2?',
+            ':SOUR:TTL2',
+            Boolean
+        )
+        self.output_line3 = Command(
+            ':SOUR:TTL3?',
+            ':SOUR:TTL3',
+            Boolean
+        )
+        self.output_line4 = Command(
+            ':SOUR:TTL4?',
+            ':SOUR:TTL4',
+            Boolean
+        )
+
+        self.voltage = Command(
+            ':SOUR:VOLT?',
+            ':SOUR:VOLT',
+            Integer(-1000, 1000)
+        )
+        self.voltage_range = Command(
+            ':SOUR:VOLT:RANG?',
+            ':SOUR:VOLT:RANG',
+            Integer(-1000, 1000)
+        )
+        self.voltage_limit = Command(
+            ':SOUR:VOLT:LIM?',
+            ':SOUR:VOLT:LIM',
+            Integer(0, 1000)
+        )
+        self.voltage_limit_state = Command(
+            ':SOUR:VOLT:LIM:STAT?',
+            ':SOUR:VOLT:LIM:STAT',
+            Boolean
+        )
+        self.mconnect = Command(
+            ':SOUR:VOLT:MCON?',
+            ':SOUR:VOLT:MCON',
+            Boolean
+        )
+
+        self.resistive_limit = Command(
+            ':SOUR:CURR:RLIM:STAT?',
+            ':SOUR:CURR:RLIM:STAT',
+            Boolean
+        )
+        self.current_compliance = Command(
+            ':SOUR:CURR:LIM?',
+            ':SOUR:CURR:LIM',
+            Boolean
+        )
 
 
 class Status(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Status, self).__init__(transport, protocol)
+        self._transport = transport
+        self._protocol = protocol
+
+        self.measurement = SubStatus(self._transport, self._protocol, 'MEAS')
+        self.questionable = SubStatus(self._transport, self._protocol, 'QUES')
+        self.operation = SubStatus(self._transport, self._protocol, 'OPER')
+        self.trigger = SubStatus(self._transport, self._protocol, 'OPER:TRIG')
+        self.arm = SubStatus(self._transport, self._protocol, 'OPER:ARM')
+        self.arm_sequence = SubStatus(self._transport, self._protocol, 'OPER:ARM:SEQ')
+
+
+class SubStatus(Driver):
+    def __init__(self, transport, protocol, subcommand):
+        super(SubStatus, self).__init__(transport, protocol)
+        self._status = subcommand
+
+        self.event = Command(
+            query=':STAT:%s?' % self._status,
+            type_=String
+        )
+        self.condition = Command(
+            query=':STAT:%s:COND?',
+            type_=String
+        )
+        self.enable_error_queue = Command(
+            ':STAT:QUE:ENAB?',
+            ':STAT:QUE:ENAB',
+            String
+        )
+
+    def enable(self, bit):
+        if bit in [2**n for n in range(16)]:
+            return self._write(':STAT:%s:ENAB %d') % (self._status, bit)
+        else:
+            print('WRONG PARAMETER')
+            return
+
+    def program_filter(self, bit):
+        if bit in [2**n for n in range(16)]:
+            return self._write(':STAT:%s:PTR %d') % (self._status, bit)
+        else:
+            print('WRONG PARAMETER')
+            return
+
+    def transition_filter(self, bit):
+        if bit in [2**n for n in range(16)]:
+            return self._write(':STAT:%s:NTR %d') % (self._status, bit)
+        else:
+            print('WRONG PARAMETER')
+            return
+
+    def preset(self):
+        return self._write(':STAT:PRES')
+
+    def get_error_queue(self):
+        return self._query((':STAT:QUE?', Stream(String)))
+
+    def disable(self, error_queue):
+        return self._write(':STAT:QUE:DIS %s') % ', '.join(error_queue)
+
+    def clear(self):
+        return self._write(':STAT:QUE:CLE')
 
 
 class System(Driver):
@@ -631,8 +1045,68 @@ class Trigger(Driver):
 
 
 class Tsequence(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Tsequence, self).__init__(transport, protocol)
+
+        self.type = Command(
+            ':TSEQ:TYPE?',
+            ':TSEQ:TYPE',
+            Mapping({
+                'DLEakage': 'DLE', 'CLEakage': 'CLE',
+                'CIResistance': 'CIR', 'RVCoefficient': 'RVC',
+                'SRESistivity': 'SRE', 'VRESistivity': 'VRES',
+                'SIResistivity': 'SIR', 'SQSWeep': 'SQSW',
+                'STSWeep': 'STSW', 'ALTPolarity': 'ALTP'
+            })
+        )
+        self.source = Command(
+            ':TSEQ:TSO?',
+            ':TSEQ:TSO',
+            Mapping({'immediate': 'IMM', 'manual': 'MAN',
+                     'bus': 'BUS', 'external': 'EXT',
+                     'tlink': 'TLIN', 'lclosuer': 'LCL'})
+        )
+        self.tlink_line = Command(
+            ':TSEQ:TLIN?',
+            ':TSEQ:TLIN',
+            Integer(1, 6)
+        )
+        self.diode_leakage_test_start = Command(
+            ':TSEQ:DLE:STAR?',
+            ':TSEQ:DLE:STAR',
+            Integer(-1000, 1000)
+        )
+        self.diode_leakage_test_stop = Command(
+            ':TSEQ:DLE:STOP?',
+            ':TSEQ:DLE:STOP',
+            Integer(-1000, 1000)
+        )
+        self.diode_leakage_test_step = Command(
+            ':TSEQ:DLE:STEP?',
+            ':TSEQ:DLE:STEP',
+            Integer(-1000, 1000)
+        )
+        self.diode_leakage_test_delay = Command(
+            ':TSEQ:DLE:MDEL?',
+            ':TSEQ:DLE:MDEL',
+            Float(0.0, 10000.0)
+        )
+
+    def arm(self):
+        return self._write(':TSEQ:ARM')
+
+    def abort(self):
+        return self._write(':TSEQ:ABOR')
 
 
 class Unit(Driver):
-    pass
+    def __init__(self, transport, protocol):
+        super(Unit, self).__init__(transport, protocol)
+
+        self.temperature = Command(
+            ':UNIT:TEMP?',
+            ':UNIT:TEMP',
+            Mapping({'Celsius': 'C', 'CELsius': 'CEL',
+                     'Fahrenheit': 'F', 'FAhRenheit': 'FAR',
+                     'Kelvin': 'K'})
+        )
